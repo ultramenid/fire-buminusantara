@@ -204,6 +204,22 @@ function buatLinimasaDefault(): ZarrTimestepMeta[] {
   return hasil;
 }
 
+function formatIsoKeWib(iso: string): string {
+  try {
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return "";
+    const namaBulan = ["Jan", "Feb", "Mar", "Apr", "Mei", "Jun", "Jul", "Agt", "Sep", "Okt", "Nov", "Des"];
+    const wib = new Date(d.getTime() + 7 * 3600 * 1000);
+    const tgl = wib.getUTCDate();
+    const bln = namaBulan[wib.getUTCMonth()];
+    const jam = String(wib.getUTCHours()).padStart(2, "0");
+    const menit = String(wib.getUTCMinutes()).padStart(2, "0");
+    return `${tgl} ${bln}, ${jam}:${menit} WIB`;
+  } catch {
+    return "";
+  }
+}
+
 // Posisi & zoom peta adaptif untuk perangkat mobile potret vs desktop/tablet
 function getInitialMapPos(): { center: [number, number]; zoom: number } {
   const isMobilePortrait =
@@ -279,6 +295,14 @@ export function PetaAsap({ jumlahLaporan, onPilihWilayah, berita, onBukaRincian,
       return sesi.timesteps;
     }
     return buatLinimasaDefault();
+  });
+  const [modelRunWib, setModelRunWib] = useState<string>(() => {
+    if (globalZarrMetadata?.latestModelRunWib) return globalZarrMetadata.latestModelRunWib;
+    if (globalZarrMetadata?.latestModelRunIso) return formatIsoKeWib(globalZarrMetadata.latestModelRunIso);
+    const sesi = ambilMetadataSesi();
+    if (sesi?.latestModelRunWib) return sesi.latestModelRunWib;
+    if (sesi?.latestModelRunIso) return formatIsoKeWib(sesi.latestModelRunIso);
+    return "";
   });
   const [indeksAktif, setIndeksAktif] = useState(0);
   const [memutar, setMemutar] = useState(true);
@@ -508,6 +532,8 @@ export function PetaAsap({ jumlahLaporan, onPilihWilayah, berita, onBukaRincian,
         if (sudahSelesai && cachedMeta?.timesteps?.length) {
           globalSyncSelesai = true;
           globalZarrMetadata = cachedMeta;
+          const runWib = cachedMeta.latestModelRunWib || (cachedMeta.latestModelRunIso ? formatIsoKeWib(cachedMeta.latestModelRunIso) : "");
+          if (runWib) setModelRunWib(runWib);
           setLinimasa(cachedMeta.timesteps);
           setSedangSync(false);
           setProgresSync(100);
@@ -561,6 +587,8 @@ export function PetaAsap({ jumlahLaporan, onPilihWilayah, berita, onBukaRincian,
 
         const totalFrames = data.timesteps.length;
         globalZarrMetadata = data;
+        const runWib = data.latestModelRunWib || (data.latestModelRunIso ? formatIsoKeWib(data.latestModelRunIso) : "");
+        if (runWib) setModelRunWib(runWib);
         setLinimasa(data.timesteps);
 
         // Muat frame aktif awal agar shader WebGL langsung terisi tanpa jeda
@@ -1500,7 +1528,13 @@ export function PetaAsap({ jumlahLaporan, onPilihWilayah, berita, onBukaRincian,
         </div>
 
         {/* Atribusi Resmi & Lisensi Data */}
-        <div className="mt-3 pt-2.5 border-t border-white/10 text-[10px] leading-relaxed text-white/50 space-y-1">
+        <div className="mt-3 pt-2.5 border-t border-white/10 text-[10px] leading-relaxed text-white/50 space-y-1.5">
+          {modelRunWib && (
+            <div className="flex items-center justify-between pb-1 border-b border-white/[0.06] text-white/70">
+              <span className="text-[10px] text-zinc-400">Siklus Model CAMS:</span>
+              <span className="font-mono text-[10px] text-amber-300 font-medium">{modelRunWib}</span>
+            </div>
+          )}
           <p>
             Contains modified{" "}
             <a
@@ -1643,29 +1677,53 @@ export function PetaAsap({ jumlahLaporan, onPilihWilayah, berita, onBukaRincian,
             </div>
 
             {/* Label Waktu Aktif & Status */}
-            <div className="flex items-center gap-1.5 sm:gap-2 text-right min-w-0 justify-end">
-              {jumlahFrameTerunduh < linimasa.length && (
-                <span className="hidden sm:inline-block rounded bg-white/[0.06] px-1.5 py-0.5 text-[10px] font-mono tabular-nums text-zinc-400 border border-white/[0.06]">
-                  {persentaseCache}%
+            <div className="flex flex-col items-end justify-center min-w-0">
+              <div className="flex items-center gap-1.5 sm:gap-2 text-right min-w-0 justify-end">
+                {jumlahFrameTerunduh < linimasa.length && (
+                  <span className="hidden sm:inline-block rounded bg-white/[0.06] px-1.5 py-0.5 text-[10px] font-mono tabular-nums text-zinc-400 border border-white/[0.06]">
+                    {persentaseCache}%
+                  </span>
+                )}
+                <span className="text-xs sm:text-sm font-semibold tracking-tight text-white tabular-nums truncate">
+                  {langkahSekarang?.labelWib || "Memuat..."}
                 </span>
-              )}
-              <span className="text-xs sm:text-sm font-semibold tracking-tight text-white tabular-nums truncate">
-                {langkahSekarang?.labelWib || "Memuat..."}
-              </span>
-              <span
-                className={`inline-flex items-center gap-1 sm:gap-1.5 rounded-full px-1.5 sm:px-2 py-0.5 text-[10px] font-medium border shrink-0 ${
-                  langkahSekarang?.adalahPrediksi
-                    ? "bg-amber-500/15 text-amber-300 border-amber-500/30"
-                    : "bg-sky-500/15 text-sky-300 border-sky-500/30"
-                }`}
-              >
                 <span
-                  className={`h-1.5 w-1.5 rounded-full ${
-                    langkahSekarang?.adalahPrediksi ? "bg-amber-400 animate-pulse" : "bg-sky-400"
+                  title={
+                    langkahSekarang?.adalahPrediksi
+                      ? modelRunWib
+                        ? `Prakiraan simulasi numerik ECMWF CAMS diinisialisasi dari siklus model ${modelRunWib}`
+                        : "Prakiraan simulasi numerik ECMWF CAMS"
+                      : "Data observasi analisis kondisi teramati"
+                  }
+                  className={`inline-flex items-center gap-1 sm:gap-1.5 rounded-full px-1.5 sm:px-2 py-0.5 text-[10px] font-medium border shrink-0 transition-colors ${
+                    langkahSekarang?.adalahPrediksi
+                      ? "bg-amber-500/15 text-amber-300 border-amber-500/30"
+                      : "bg-sky-500/15 text-sky-300 border-sky-500/30"
                   }`}
-                />
-                <span className="text-[9px] sm:text-[10px]">{langkahSekarang?.adalahPrediksi ? "Prediksi" : "Analisis"}</span>
-              </span>
+                >
+                  <span
+                    className={`h-1.5 w-1.5 rounded-full ${
+                      langkahSekarang?.adalahPrediksi ? "bg-amber-400 animate-pulse" : "bg-sky-400"
+                    }`}
+                  />
+                  <span className="text-[9px] sm:text-[10px]">{langkahSekarang?.adalahPrediksi ? "Prediksi" : "Analisis"}</span>
+                </span>
+              </div>
+
+              {/* Sub-keterangan: Siklus Basis Model saat Prediksi / Analisis Teramati */}
+              <div className="text-[9.5px] leading-tight text-zinc-400/90 font-mono tracking-tight mt-0.5 truncate max-w-[210px] sm:max-w-[320px]">
+                {langkahSekarang?.adalahPrediksi ? (
+                  <span
+                    title={modelRunWib ? `Hasil prakiraan numerik dari siklus model CAMS ${modelRunWib}` : undefined}
+                    className="flex items-center gap-1 justify-end cursor-help"
+                  >
+                    <span className="text-amber-400/80 font-sans font-medium text-[9px]">Basis Model:</span>
+                    <span className="text-zinc-300">{modelRunWib || "ECMWF CAMS"}</span>
+                  </span>
+                ) : (
+                  <span className="text-zinc-500 font-sans text-[9px]">Analisis Teramati Satelit</span>
+                )}
+              </div>
             </div>
           </div>
 

@@ -37,6 +37,7 @@ export interface ZarrTimestepMeta {
 
 export interface ZarrMetadataResponse {
   latestModelRunIso: string;
+  latestModelRunWib?: string;
   timesteps: ZarrTimestepMeta[];
   grid: {
     rows: number;
@@ -206,6 +207,10 @@ export async function getZarrMetadata(): Promise<ZarrMetadataResponse> {
     const latestBaseMs = timesMap.get(latestTimeIndex) || now;
     const latestModelRunIso = new Date(latestBaseMs).toISOString();
 
+    const namaBulan = ["Jan", "Feb", "Mar", "Apr", "Mei", "Jun", "Jul", "Agt", "Sep", "Okt", "Nov", "Des"];
+    const wibRun = new Date(latestBaseMs + 7 * 3600 * 1000);
+    const latestModelRunWib = `${wibRun.getUTCDate()} ${namaBulan[wibRun.getUTCMonth()]}, ${String(wibRun.getUTCHours()).padStart(2, "0")}:${String(wibRun.getUTCMinutes()).padStart(2, "0")} WIB`;
+
     const timesteps: ZarrTimestepMeta[] = [];
 
     // 1. Periode Analisis 7 Hari Terakhir (Historis, step per 3 jam)
@@ -248,6 +253,7 @@ export async function getZarrMetadata(): Promise<ZarrMetadataResponse> {
     const isWarm = frameCache.size >= Math.floor(timesteps.length * 0.7);
     const result: ZarrMetadataResponse = {
       latestModelRunIso,
+      latestModelRunWib,
       timesteps,
       grid: {
         rows: ZARR_GLOBAL_GRID.rows,
@@ -366,8 +372,13 @@ function getFallbackMetadata(): ZarrMetadataResponse {
   }
 
   const isWarm = frameCache.size >= Math.floor(timesteps.length * 0.7);
+  const namaBulan = ["Jan", "Feb", "Mar", "Apr", "Mei", "Jun", "Jul", "Agt", "Sep", "Okt", "Nov", "Des"];
+  const wibRun = new Date(now + 7 * 3600 * 1000);
+  const latestModelRunWib = `${wibRun.getUTCDate()} ${namaBulan[wibRun.getUTCMonth()]}, ${String(wibRun.getUTCHours()).padStart(2, "0")}:${String(wibRun.getUTCMinutes()).padStart(2, "0")} WIB`;
+
   return {
-    latestModelRunIso: new Date().toISOString(),
+    latestModelRunIso: new Date(now).toISOString(),
+    latestModelRunWib,
     timesteps,
     grid: {
       rows: ZARR_GLOBAL_GRID.rows,
