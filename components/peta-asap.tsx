@@ -565,6 +565,70 @@ export function PetaAsap({ jumlahLaporan, onPilihWilayah, berita, onBukaRincian,
             }
           };
           Promise.all(Array.from({ length: Math.min(CONCURRENCY, totalFrames) }, () => workerBg())).catch(() => {});
+
+          // Revalidasi hening di latar belakang (Stale-While-Revalidate):
+          // Cek apakah server sudah memiliki siklus model CAMS yang lebih baru
+          const revalidasiLatarBelakang = async () => {
+            try {
+              const res = await fetch(`/api/sebaran-asap?mode=metadata&_ts=${Date.now()}`);
+              if (!res.ok) return;
+              const metaBaru: ZarrMetadataResponse = await res.json();
+              if (!metaBaru.timesteps || metaBaru.timesteps.length === 0) return;
+
+              const runLama = cachedMeta.latestModelRunIso;
+              const runBaru = metaBaru.latestModelRunIso;
+
+              if (runBaru && runBaru !== runLama) {
+                globalZarrMetadata = metaBaru;
+                try {
+                  sessionStorage.setItem(SINKRON_SELESAI_KEY, "true");
+                  sessionStorage.setItem(METADATA_CACHE_KEY, JSON.stringify(metaBaru));
+                } catch {}
+
+                const runWibBaru =
+                  metaBaru.latestModelRunWib ||
+                  (metaBaru.latestModelRunIso ? formatIsoKeWib(metaBaru.latestModelRunIso) : "");
+                if (runWibBaru) setModelRunWib(runWibBaru);
+                setLinimasa(metaBaru.timesteps);
+
+                // Muat frame aktif untuk siklus model baru
+                const curActiveIndex = Math.min(
+                  Math.floor(progressRef.current),
+                  metaBaru.timesteps.length - 1
+                );
+                const curStep = metaBaru.timesteps[curActiveIndex] || metaBaru.timesteps[0];
+                if (curStep) {
+                  await muatFrame(curStep);
+                  if (mapRef.current) {
+                    mapRef.current.triggerRepaint();
+                  }
+                }
+
+                // Unduh frame baru sisa di latar belakang
+                const totalNew = metaBaru.timesteps.length;
+                let nextNewIdx = 0;
+                const workerNew = async () => {
+                  while (nextNewIdx < totalNew) {
+                    const idx = nextNewIdx++;
+                    const st = metaBaru.timesteps[idx];
+                    if (st) {
+                      const k = `${st.timeChunk}_${st.step}_${st.timeInner}`;
+                      if (!frameCacheRef.current[k]) {
+                        await muatFrame(st);
+                      }
+                    }
+                  }
+                };
+                Promise.all(Array.from({ length: Math.min(CONCURRENCY, totalNew) }, () => workerNew())).catch(
+                  () => {}
+                );
+              }
+            } catch {
+              // Hening jika gagal revalidasi latar belakang agar UX tidak terganggu
+            }
+          };
+          revalidasiLatarBelakang();
+
           return;
         }
       }
@@ -653,15 +717,29 @@ export function PetaAsap({ jumlahLaporan, onPilihWilayah, berita, onBukaRincian,
     [muatFrame]
   );
 
-  // Jalankan sinkronisasi penuh saat komponen terpasang
+  // Jalankan sinkronisasi saat komponen terpasang, saat window kembali aktif (focus), dan berkala tiap 10 menit
   useEffect(() => {
     let batal = false;
     const t = setTimeout(() => {
       if (!batal) sinkronkanSebaranAsap(false);
     }, 0);
+
+    const onFocus = () => {
+      if (!batal) sinkronkanSebaranAsap(false);
+    };
+    window.addEventListener("focus", onFocus);
+
+    const interval = setInterval(() => {
+      if (!batal && typeof document !== "undefined" && !document.hidden) {
+        sinkronkanSebaranAsap(false);
+      }
+    }, 10 * 60 * 1000);
+
     return () => {
       batal = true;
       clearTimeout(t);
+      clearInterval(interval);
+      window.removeEventListener("focus", onFocus);
     };
   }, [sinkronkanSebaranAsap]);
 

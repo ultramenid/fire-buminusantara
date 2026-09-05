@@ -142,9 +142,9 @@ function buatMetaLangkah(
 /**
  * Fetch and parse Zarr metadata to identify available timesteps.
  */
-export async function getZarrMetadata(): Promise<ZarrMetadataResponse> {
+export async function getZarrMetadata(forceRefresh: boolean = false): Promise<ZarrMetadataResponse> {
   const now = Date.now();
-  if (cachedMetadata && cachedMetadata.expiresAt > now) {
+  if (!forceRefresh && cachedMetadata && cachedMetadata.expiresAt > now) {
     const isWarm = frameCache.size >= Math.floor(cachedMetadata.data.timesteps.length * 0.7);
     return {
       ...cachedMetadata.data,
@@ -161,7 +161,10 @@ export async function getZarrMetadata(): Promise<ZarrMetadataResponse> {
 
   try {
     const metaUrl = `${ZARR_BASE_URL}/.zmetadata?_fet=${ZARR_TOKEN}`;
-    const res = await fetch(metaUrl, { next: { revalidate: 1800 } });
+    const res = await fetch(
+      metaUrl,
+      forceRefresh ? { cache: "no-store" } : { next: { revalidate: 600 } }
+    );
     if (!res.ok) {
       throw new Error(`Failed to fetch Zarr metadata: ${res.status} ${res.statusText}`);
     }
@@ -266,7 +269,7 @@ export async function getZarrMetadata(): Promise<ZarrMetadataResponse> {
 
     cachedMetadata = {
       data: result,
-      expiresAt: now + 30 * 60 * 1000, // cache for 30 minutes
+      expiresAt: now + 15 * 60 * 1000, // cache for 15 minutes
     };
 
     return result;
@@ -395,7 +398,8 @@ function getFallbackMetadata(): ZarrMetadataResponse {
  * Dipanggil oleh cron job background atau script pre-warm.
  */
 export async function hangatkanSemuaFrame(
-  onProgress?: (selesai: number, total: number) => void
+  onProgress?: (selesai: number, total: number) => void,
+  forceRefresh: boolean = true
 ): Promise<{
   total: number;
   berhasil: number;
@@ -404,7 +408,7 @@ export async function hangatkanSemuaFrame(
   isWarm: boolean;
 }> {
   const mulai = Date.now();
-  const meta = await getZarrMetadata();
+  const meta = await getZarrMetadata(forceRefresh);
   const total = meta.timesteps.length;
   let berhasil = 0;
   let gagal = 0;

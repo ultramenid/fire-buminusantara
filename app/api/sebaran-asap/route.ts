@@ -4,13 +4,16 @@ import { getZarrMetadata, getZarrFrame } from "@/lib/zarr-reader";
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const mode = searchParams.get("mode") || "metadata";
+  const force = searchParams.get("force") === "true" || searchParams.has("_ts");
 
   try {
     if (mode === "metadata") {
-      const metadata = await getZarrMetadata();
+      const metadata = await getZarrMetadata(force);
       return NextResponse.json(metadata, {
         headers: {
-          "Cache-Control": "public, max-age=600, s-maxage=1800, stale-while-revalidate=3600",
+          "Cache-Control": force
+            ? "no-cache, no-store, must-revalidate"
+            : "public, max-age=300, s-maxage=600, stale-while-revalidate=1800",
         },
       });
     }
