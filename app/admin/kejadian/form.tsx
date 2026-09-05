@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import { Wajib, Bantuan, Isian, IsianPanjang, IsianKoordinat } from "../isian";
 import { useFormStatus } from "react-dom";
 import Link from "next/link";
@@ -64,6 +64,27 @@ export function FormKejadian({
   const [saran, setSaran] = useState<SaranTitik | null>(null);
   const [mengenali, setMengenali] = useState(false);
 
+  // Galeri berkas baru hidup di sini, bukan di isi <input type="file">:
+  // begitu form dikirim, isi input DOM langsung diserialisasi, sedangkan
+  // daftar kartunya masih bisa diedit. Berkas dilampirkan dari state ini di
+  // kirimFormulir() — input pemilihnya sendiri tak bernama dan tak pernah ikut
+  // diserialisasi — jadi kartu yang tampil selalu persis berkas yang terkirim.
+  const [mediaBaru, setMediaBaru] = useState<ItemBaruGaleri[]>([]);
+
+  // URL objek menahan berkasnya di memori sampai dilepas. Pencabutan hanya
+  // saat unmount — cleanup yang jalan di tiap perubahan daftar akan mencabut
+  // URL yang masih dipakai pratinjau (termasuk tangkapan bingkai yang sedang
+  // berjalan). Berkas yang dibuang manual dicabut sendiri di hapusBaru().
+  const rujukMediaBaru = useRef(mediaBaru);
+  useEffect(() => {
+    rujukMediaBaru.current = mediaBaru;
+  }, [mediaBaru]);
+  useEffect(() => {
+    return () => {
+      rujukMediaBaru.current.forEach((b) => URL.revokeObjectURL(b.url));
+    };
+  }, []);
+
   // Hasil dibagi 10 halaman; menggulir ke dasar daftar mengambil halaman
   // berikutnya. `permintaan` membuang jawaban yang sudah ketinggalan ketika
   // pengguna terus mengetik.
@@ -113,8 +134,16 @@ export function FormKejadian({
     return () => clearTimeout(tundaSaran.current);
   }, [lat, lng]);
 
+  // Lampirkan berkas galeri dari state, bukan dari input berkasnya. Ini juga
+  // melepas ketergantungan pada mutasi input.files lewat DataTransfer, yang
+  // tidak didukung semua peramban.
+  function kirimFormulir(data: FormData) {
+    for (const b of mediaBaru) data.append("media_files", b.berkas);
+    return aksi(data);
+  }
+
   return (
-    <form action={aksi}>
+    <form action={kirimFormulir}>
       <Bagian nomor="01" judul="Laporan">
         <Isian
           label="Judul (ID)"
@@ -250,7 +279,7 @@ export function FormKejadian({
       </Bagian>
 
       <Bagian nomor="03" judul="Media">
-        <Galeri tersimpan={awal.galeri} />
+        <Galeri tersimpan={awal.galeri} baru={mediaBaru} setBaru={setMediaBaru} />
       </Bagian>
 
       {/* Bilah aksi menempel di dasar layar: form ini panjang, dan tombol simpan
@@ -372,40 +401,25 @@ function bingkaiLokal(url: string): Promise<string | null> {
  * Yang sudah tersimpan dirender sebagai kotak centang `keep_media` bernilai
  * INDEKS — melepas centang berarti berkasnya dibuang saat disimpan. Tiap berkas
  * punya isian `media_desc_<indeks>` (tersimpan) / `media_desc_baru` (baru,
- * dijumlah urut sama dengan `media_files`) untuk keterangannya. Berkas baru
- * masuk lewat satu input `media_files` bertipe multiple dan terakumulasi
- * tanpa menghapus berkas yang sudah dipilih sebelumnya.
+ * dijumlah urut sama dengan berkas baru) untuk keterangannya. Berkas baru
+ * masuk lewat satu input multiple yang TERAKUMULASI ke state induk tanpa
+ * menghapus pilihan sebelumnya; menghapus kartu cukup membuangnya dari state.
+ *
+ * Selama pengiriman pending semua kontrol galeri dikunci: isi form sudah
+ * diserialisasi saat tombol simpan ditekan, jadi melepas centang atau
+ * membatalkan berkas setelahnya tidak mengubah kiriman yang sedang terbang —
+ * tanpa kunci ini hapus-media tampak "tidak berfungsi" karena hasil simpannya
+ * memuat lagi media yang sudah dibuang dari layar.
  */
-function Galeri({ tersimpan }: { tersimpan: ItemMedia[] }) {
-  const [baru, setBaru] = useState<ItemBaruGaleri[]>([]);
+function Galeri({
+  tersimpan, baru, setBaru,
+}: {
+  tersimpan: ItemMedia[];
+  baru: ItemBaruGaleri[];
+  setBaru: Dispatch<SetStateAction<ItemBaruGaleri[]>>;
+}) {
+  const { pending: mengirim } = useFormStatus();
   const inputRef = useRef<HTMLInputElement>(null);
-
-  // URL objek menahan berkasnya di memori sampai dilepas. Pencabutan hanya
-  // saat unmount — cleanup yang jalan di tiap perubahan daftar akan mencabut
-  // URL yang masih dipakai pratinjau (termasuk tangkapan bingkai yang sedang
-  // berjalan). Berkas yang dibuang manual dicabut sendiri di hapusBaru().
-  const rujukBaru = useRef(baru);
-  useEffect(() => {
-    rujukBaru.current = baru;
-  }, [baru]);
-  useEffect(() => {
-    return () => {
-      rujukBaru.current.forEach((b) => URL.revokeObjectURL(b.url));
-    };
-  }, []);
-
-  function sinkronkanInput(daftar: ItemBaruGaleri[]) {
-    if (!inputRef.current) return;
-    try {
-      if (typeof DataTransfer !== "undefined") {
-        const dt = new DataTransfer();
-        daftar.forEach((b) => dt.items.add(b.berkas));
-        inputRef.current.files = dt.files;
-      }
-    } catch {
-      // Fallback jika lingkungan browser tidak mendukung mutasi DataTransfer
-    }
-  }
 
   function pilih(berkasList: FileList | null) {
     if (!berkasList || berkasList.length === 0) return;
@@ -419,17 +433,12 @@ function Galeri({ tersimpan }: { tersimpan: ItemMedia[] }) {
       keterangan: "",
     }));
 
-    // Urutannya penting: menyetel .value = "" pada input berkas MENGOSONGKAN
-    // .files. Kalau reset dilakukan setelah sinkronkanInput(), berkas yang baru
-    // saja ditulis langsung terhapus dan form terkirim tanpa lampiran —
-    // tersimpan tanpa media, tanpa galat. Jadi reset dulu, sinkron belakangan.
+    // Pemilihnya dikosongkan supaya berkas yang sama bisa dipilih lagi di
+    // pemilihan berikutnya. Daftar kartunya hidup di state induk — yang dikirim
+    // ke server pun dari sana (lihat kirimFormulir), bukan dari isi input ini.
     if (inputRef.current) inputRef.current.value = "";
 
-    setBaru((lama) => {
-      const gabungan = [...lama, ...tambahan];
-      sinkronkanInput(gabungan);
-      return gabungan;
-    });
+    setBaru((lama) => [...lama, ...tambahan]);
 
     // Poster pratinjau untuk video baru ditangkap di belakang; bila berhasil,
     // kartu video berganti dari <video> ke gambar statis tanpa perlu disimpan.
@@ -445,13 +454,9 @@ function Galeri({ tersimpan }: { tersimpan: ItemMedia[] }) {
   }
 
   function hapusBaru(id: string) {
-    setBaru((lama) => {
-      const target = lama.find((b) => b.id === id);
-      if (target) URL.revokeObjectURL(target.url);
-      const sisa = lama.filter((b) => b.id !== id);
-      sinkronkanInput(sisa);
-      return sisa;
-    });
+    const target = baru.find((b) => b.id === id);
+    if (target) URL.revokeObjectURL(target.url);
+    setBaru((lama) => lama.filter((b) => b.id !== id));
   }
 
   return (
@@ -475,8 +480,10 @@ function Galeri({ tersimpan }: { tersimpan: ItemMedia[] }) {
                     membuat klik pada isian ikut menyalakan centangnya. */}
                 <label className="group relative block cursor-pointer
                                   has-[:focus-visible]:outline has-[:focus-visible]:outline-2
-                                  has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-[var(--limau)]">
-                  <input type="checkbox" name="keep_media" value={i} defaultChecked className="peer sr-only" />
+                                  has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-[var(--limau)]
+                                  has-[:disabled]:cursor-not-allowed has-[:disabled]:opacity-60">
+                  <input type="checkbox" name="keep_media" value={i} defaultChecked
+                         disabled={mengirim} className="peer sr-only" />
 
                   {/* Yang akan dibuang diredupkan dan diberi cap; tanpa penanda
                       seperti ini, melepas centang tidak terlihat sama sekali. */}
@@ -545,12 +552,12 @@ function Galeri({ tersimpan }: { tersimpan: ItemMedia[] }) {
       <input
         ref={inputRef}
         id="media_files"
-        name="media_files"
         type="file"
         multiple
+        disabled={mengirim}
         accept="image/jpeg,image/png,image/webp,video/mp4,video/quicktime,video/webm"
         onChange={(e) => pilih(e.target.files)}
-        className="cms-isian w-full"
+        className="cms-isian w-full disabled:opacity-60"
       />
       <Bantuan>
         Boleh beberapa foto/video sekaligus, maksimal 100 MB per berkas. Memilih berkas
@@ -571,9 +578,12 @@ function Galeri({ tersimpan }: { tersimpan: ItemMedia[] }) {
                 <button
                   type="button"
                   onClick={() => hapusBaru(b.id)}
+                  disabled={mengirim}
                   title="Batalkan berkas ini"
                   aria-label={`Batalkan ${b.nama}`}
-                  className="absolute top-1 right-1 z-[3] grid size-5 cursor-pointer place-items-center rounded-full bg-black/60 text-white transition hover:bg-[var(--api)]"
+                  className="absolute top-1 right-1 z-[3] grid size-5 cursor-pointer place-items-center rounded-full
+                             bg-black/60 text-white transition hover:bg-[var(--api)]
+                             disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   <svg viewBox="0 0 20 20" aria-hidden="true" fill="currentColor" className="size-3">
                     <path d="M6.28 5.22a.75.75 0 0 0-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 1 0 1.06 1.06L10 11.06l3.72 3.72a.75.75 0 1 0 1.06-1.06L11.06 10l3.72-3.72a.75.75 0 0 0-1.06-1.06L10 8.94 6.28 5.22Z" />
