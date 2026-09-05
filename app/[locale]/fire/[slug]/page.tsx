@@ -78,7 +78,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   }
 
   const { judul: judulSeo, deskripsi: deskripsiSeo } = teksSeo(seo, kejadian, locale);
-  const judul = `${judulSeo} — Fire`;
+  const judul = judulSeo;
   const deskripsi =
     deskripsiSeo ||
     `Pantauan karhutla di ${kejadian.lokasi ?? "Indonesia"} (${kejadian.tanggal}).`;
