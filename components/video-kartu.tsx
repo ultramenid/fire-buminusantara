@@ -20,6 +20,12 @@ type Props = {
   onBuka: () => void;
 };
 
+/* Poster yang pernah selesai dimuat di sesi halaman ini. Kartu di-mount ulang
+   serentak setiap daftar berita berubah, dan img.onload untuk berkas yang sudah
+   di tembolok baru menyala SETELAH paint — jadi tanpa catatan ini setiap
+   remount menampilkan kerangka putih sekejap di semua kartu sekaligus. */
+const posterTermuat = new Set<string>();
+
 /**
  * Video pada kartu korsel: tidak diulang sendiri, berhenti di bingkai terakhir,
  * lalu tombol putar ulang yang meneruskan.
@@ -32,7 +38,7 @@ export function VideoKartu({ src, poster, label, aktif, kurangiGerak, className,
   const ref = useRef<HTMLVideoElement | null>(null);
   const [durasi, setDurasi] = useState("");
   const [usai, setUsai] = useState(false);
-  const [siap, setSiap] = useState(false);
+  const [siap, setSiap] = useState(() => (poster ? posterTermuat.has(poster) : false));
   // timeupdate menembak ~4x/detik; tulis state hanya saat angka detik yang
   // tampil benar-benar berganti supaya tidak render ulang terus-menerus.
   const detikTampil = useRef("");
@@ -43,9 +49,12 @@ export function VideoKartu({ src, poster, label, aktif, kurangiGerak, className,
   useEffect(() => {
     if (!poster) return;
     const img = new Image();
-    img.onload = () => setSiap(true);
-    img.onerror = () => setSiap(true);
+    const selesai = () => { posterTermuat.add(poster); setSiap(true); };
+    img.onload = selesai;
+    img.onerror = selesai;
     img.src = poster;
+    // Berkas tembolok sudah `complete` seketika — tidak perlu menunggu event.
+    if (img.complete) selesai();
     return () => {
       img.onload = null;
       img.onerror = null;

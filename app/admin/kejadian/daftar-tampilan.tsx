@@ -61,12 +61,16 @@ export function DaftarTampilan({ daftar }: { daftar: ItemKejadian[] }) {
   function gantiMode(m: "list" | "card") {
     try {
       localStorage.setItem("cms_kejadian_tampilan", m);
-      window.dispatchEvent(new Event(EVENT_TAMPILAN));
     } catch {
       // Abaikan jika localStorage tidak tersedia
     }
+    // Pola useSyncExternalStore: tulis sumber lalu beri tahu semua pelanggan
+    // (termasuk tab lain lewat "storage") agar mode ikut berganti.
+    window.dispatchEvent(new Event(EVENT_TAMPILAN));
   }
-  return (    <div>
+
+  return (
+    <div>
       {/* Pengalih Tampilan List vs Card */}
       <div className="mb-4 flex items-center justify-end gap-1.5">
         <span className="cms-mata mr-1.5 text-[11px] text-[var(--lirih)]">Tampilan:</span>

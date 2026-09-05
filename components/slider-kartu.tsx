@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { VideoKartu } from "./video-kartu";
 import type { ItemMedia } from "@/lib/media";
 
@@ -101,9 +101,22 @@ function FotoKartu({
   onBuka: () => void;
 }) {
   const [fotoSiap, setFotoSiap] = useState(false);
+
+  /* Foto yang sudah di tembolok peramban sudah `complete` sejak elemennya
+     dipasang, dan onLoad TIDAK dijamin menyala lagi untuknya. Tanpa cek ini
+     setiap remount memasang kerangka dulu — dan kartu memang di-mount ulang
+     serentak begitu daftar berita berubah (mis. kejadian baru masuk lewat
+     penyegar otomatis), sehingga semua foto berkedip putih bersamaan.
+     Ref callback berjalan sebelum paint, jadi kerangkanya tidak sempat
+     terlihat. */
+  const pasangFoto = useCallback((el: HTMLImageElement | null) => {
+    if (el?.complete) setFotoSiap(true);
+  }, []);
+
   return (
     <>
       <img
+        ref={pasangFoto}
         src={src}
         alt={alt}
         loading="eager"

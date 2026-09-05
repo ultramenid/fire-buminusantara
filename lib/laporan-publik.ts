@@ -179,6 +179,16 @@ export async function simpanLaporanPublik(
     };
   }
 
+  // Bukti visual wajib: laporan tanpa foto/video tidak bisa diverifikasi
+  // petugas. Klien sudah mencegah, tapi kiriman langsung tetap ditolak di sini.
+  if (berkas.length === 0) {
+    return {
+      ok: false,
+      galat: "Sertakan minimal satu foto atau video sebagai bukti.",
+      bidang: "berkas",
+    };
+  }
+
   // Lokasi manual selalu lebih dihargai: koordinat dari EXIF hanya dipakai
   // sebagai cadangan kalau pelapor tidak mengisi lat/lng sama sekali. Diambil
   // dari gambar pertama yang punya metadata GPS.

@@ -68,8 +68,9 @@ jobs:
             web false
           fi
 
-  # Satu-satunya layanan: Next.js di root repo. Belum ada skrip `test` —
-  # kombinasi yang ada: lint + build (build gagal kalau rute dinamis rusak).
+  # Satu-satunya layanan: Next.js di root repo. Urutan gerbang disengaja dari
+  # yang termurah: tsc (tipe jebol = 500 di produksi) → unit test → lint →
+  # build (gagal kalau rute dinamis rusak; --webpack = jalur build Docker).
   test-web:
     needs: changes
     if: needs.changes.outputs.web == 'true'
@@ -87,6 +88,17 @@ jobs:
           # prisma.config.ts butuh DATABASE_URL terdefinisi; generate tidak konek.
           DATABASE_URL: mysql://ci:ci@localhost:3306/ci
       - run: npm run lint
+      # WAJIB sebelum tsc: `PageProps`, `LayoutProps`, dan `RouteContext` adalah
+      # tipe global yang DIBANGKITKAN Next ke .next/types — di checkout bersih
+      # folder itu belum ada, dan tsc gagal dengan "Cannot find name
+      # 'PageProps'". Di mesin pengembang tidak terlihat karena .next sudah
+      # terisi build sebelumnya. `typegen` membuatnya tanpa build penuh (~0,4
+      # detik), jadi urutan gerbang termurah-dulu tetap terjaga.
+      - run: npx next typegen
+      - run: npx tsc --noEmit
+      # Tanpa DB: test node:test hanya menyentuh lib murni (wilayah, bahasa,
+      # media, …). Yang butuh DB/S3 sengaja tidak ada di pola lib/**/*.test.ts.
+      - run: npm test
       # --webpack: jalur yang sama dengan build Docker (lihat Dockerfile).
       - run: npx next build --webpack
         env:

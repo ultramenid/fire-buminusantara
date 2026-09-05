@@ -74,6 +74,15 @@ export function FormLaporan({ bahasa }: { bahasa: Bahasa }) {
   const captchaRef = useRef<HTMLDivElement | null>(null);
   const widgetRef = useRef<number | null>(null);
   const sedangKirimRef = useRef(false);
+  const formRef = useRef<HTMLFormElement>(null);
+  /* Pengunjung menekan Kirim sebelum token Turnstile datang. Bukan galat —
+     cuma perlu ditunggu, lalu kirimannya dilanjutkan sendiri. */
+  const [menungguToken, setMenungguToken] = useState(false);
+  /* Penunggu token, bukan useEffect: efek yang memanggil setState lalu
+     requestSubmit() menimbulkan render beruntun, dan hook-nya harus duduk di
+     atas semua return bersyarat di komponen ini. Janji sederhana yang
+     diselesaikan callback Turnstile jauh lebih tenang. */
+  const penungguToken = useRef<((tiba: boolean) => void)[]>([]);
   const lokasiAktifRef = useRef(true);
   // Nilai lat/lng terkini untuk pengecekan di dalam callback async (isi GPS
   // foto): state yang dibaca langsung bisa basi setelah await. Diselaraskan
@@ -178,7 +187,11 @@ export function FormLaporan({ bahasa }: { bahasa: Bahasa }) {
       widgetRef.current = ts.render(wadah, {
         sitekey: SITE_KEY,
         appearance: "interaction-only",
-        callback: (token: string) => setCaptchaToken(token),
+        callback: (token: string) => {
+          setCaptchaToken(token);
+          // Bangunkan kiriman yang tertahan menunggu token ini.
+          penungguToken.current.splice(0).forEach((bangun) => bangun(true));
+        },
         "expired-callback": () => {
           setCaptchaToken("");
           if (widgetRef.current !== null) {
@@ -371,10 +384,47 @@ export function FormLaporan({ bahasa }: { bahasa: Bahasa }) {
 
   return (
     <form
+      ref={formRef}
       action={aksi}
       onSubmit={(e) => {
-        if (sedangKirimRef.current || mengirim || (Boolean(SITE_KEY) && !captchaToken)) {
+        if (sedangKirimRef.current || mengirim || menungguToken) {
           e.preventDefault();
+          return;
+        }
+        // Bukti visual wajib: tanpa satu berkas pun laporan tidak bisa
+        // diverifikasi petugas. Dicek di sini (pesan langsung di bawah form)
+        // dan di server (menolak kiriman yang mengakali klien).
+        if (berkas.length === 0) {
+          e.preventDefault();
+          setGalatKlien(teks.berkasWajib);
+          document.getElementById("berkas-laporan")?.focus();
+          return;
+        }
+        // Token belum datang: TAHAN kirimannya, jangan tolak diam-diam.
+        if (Boolean(SITE_KEY) && !captchaToken) {
+          e.preventDefault();
+          setGalatKlien("");
+          setMenungguToken(true);
+          new Promise<boolean>((selesai) => {
+            const jam = setTimeout(() => {
+              penungguToken.current = penungguToken.current.filter((f) => f !== bangun);
+              selesai(false);
+            }, 20000);
+            const bangun = (tiba: boolean) => { clearTimeout(jam); selesai(tiba); };
+            penungguToken.current.push(bangun);
+          }).then((tiba) => {
+            setMenungguToken(false);
+            if (!tiba) {
+              setGalatKlien(
+                bahasa === "en"
+                  ? "Security check could not load. Check your connection and try again."
+                  : "Pemeriksaan keamanan gagal dimuat. Periksa koneksi Anda lalu coba lagi.",
+              );
+              return;
+            }
+            sedangKirimRef.current = true;
+            formRef.current?.requestSubmit();
+          });
           return;
         }
         sedangKirimRef.current = true;
@@ -401,7 +451,7 @@ export function FormLaporan({ bahasa }: { bahasa: Bahasa }) {
                   className={`${ISIAN} resize-y leading-[1.6]`} />
       </Bidang>
 
-      <Bidang id="berkas-laporan" label={teks.labelBerkas} petunjuk={teks.petunjukBerkas}>
+      <Bidang id="berkas-laporan" label={teks.labelBerkas} petunjuk={teks.petunjukBerkas} wajib>
         {/* Input aslinya disembunyikan dari mata, bukan dari pembaca layar:
             tampilan bawaannya berbeda di tiap peramban dan tidak memberi tahu
             berkas mana saja yang sudah terpilih. Daftar di bawahlah yang
@@ -508,14 +558,21 @@ export function FormLaporan({ bahasa }: { bahasa: Bahasa }) {
       {mengirim && <BilahUnggah />}
 
       <div className="flex items-center gap-4 border-t border-black/[0.08] pt-6">
+        {/* "Memverifikasi…" HANYA saat mengirim, tidak saat halaman dibuka.
+            Dulu tombolnya terkunci dengan label itu sejak muat pertama sampai
+            token Turnstile tiba — di jaringan lambat tampak seperti form yang
+            rusak, padahal pengunjung belum melakukan apa pun. Sekarang ia
+            langsung siap; labelnya baru berubah sesudah ditekan, saat
+            menunggu memang masuk akal. */}
         <button
           type="submit"
-          disabled={mengirim || (Boolean(SITE_KEY) && !captchaToken)}
+          disabled={mengirim || menungguToken}
+          aria-busy={mengirim || menungguToken}
           className={`${TOMBOL_UTAMA} disabled:opacity-60`}
         >
           {mengirim
             ? teks.mengirim
-            : Boolean(SITE_KEY) && !captchaToken
+            : menungguToken
             ? (bahasa === "en" ? "Verifying…" : "Memverifikasi…")
             : teks.kirim}
         </button>

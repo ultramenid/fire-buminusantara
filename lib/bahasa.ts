@@ -54,7 +54,7 @@ export const TEKS_LAPOR = {
     labelDeskripsi: "Apa yang terjadi",
     petunjukDeskripsi: "Kapan Anda melihatnya, seberapa luas, apa yang terbakar.",
     labelBerkas: "Foto atau video",
-    petunjukBerkas: "Boleh lebih dari satu. JPG, PNG, WebP, MP4, MOV, atau WebM.",
+    petunjukBerkas: "Wajib: minimal satu. JPG, PNG, WebP, MP4, MOV, atau WebM.",
     catatanMetadata:
       "Berkas dikirim apa adanya — data kamera dan lokasi di dalam foto tidak dihapus.",
     pilihBerkas: "Pilih berkas",
@@ -77,6 +77,7 @@ export const TEKS_LAPOR = {
     lagi: "Kirim laporan lain",
     terlaluBesar: "Total berkas melebihi 100 MB. Kurangi atau perkecil dulu.",
     terlaluBanyak: "Maksimal {n} berkas per laporan.",
+    berkasWajib: "Sertakan minimal satu foto atau video sebagai bukti.",
   },
   en: {
     judulHalaman: "Report a Wildfire",
@@ -88,7 +89,7 @@ export const TEKS_LAPOR = {
     labelDeskripsi: "What happened",
     petunjukDeskripsi: "When you saw it, how large it was, what is burning.",
     labelBerkas: "Photos or video",
-    petunjukBerkas: "More than one is fine. JPG, PNG, WebP, MP4, MOV, or WebM.",
+    petunjukBerkas: "Required: at least one. JPG, PNG, WebP, MP4, MOV, or WebM.",
     catatanMetadata:
       "Files are sent as-is — the camera and location data inside your photos is not stripped.",
     pilihBerkas: "Choose files",
@@ -111,5 +112,6 @@ export const TEKS_LAPOR = {
     lagi: "Send another report",
     terlaluBesar: "Total file size exceeds 100 MB. Remove or shrink some files first.",
     terlaluBanyak: "At most {n} files per report.",
+    berkasWajib: "Attach at least one photo or video as evidence.",
   },
 } as const satisfies Record<Bahasa, unknown>;

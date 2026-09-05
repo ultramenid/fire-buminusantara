@@ -155,14 +155,54 @@ compose pull
 compose up -d --remove-orphans
 
 # ── 5. Sehat? ───────────────────────────────────────────────────────────────
-if wait_healthy; then
+# Kontainer "healthy" belum berarti halaman tampil — health check HTTP bawaan
+# hanya menyentuh /id, sedangkan bug peta Leaflet (ubin sebaris) lolos darinya.
+# asap_rute mengetuk rute-rute kunci dan gagal (→ rollback di bawah) kalau ada
+# yang menjawab 5xx / tak menjawab sama sekali.
+asap_rute() {
+  command -v curl >/dev/null 2>&1 || {
+    log "peringatan: curl tidak ada di box — asap rute dilewati"
+    return 0
+  }
+  local basis="http://127.0.0.1:3000" gagal=0
+  # $1=path, $2=mode: "halaman" (harus 2xx/3xx) atau "tahan" (cukup non-5xx —
+  # untuk API yang sah menjawab 4xx, mis. parameter kurang).
+  cek() {
+    local kode
+    kode="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 30 "$basis$1" 2>/dev/null || echo 000)"
+    # curl yang gagal koneksi mencetak 000 sendiri LEWAT -w lalu gagal —
+    # tanpa normalisasi kode jadi "000000" dan lolos dari pola 000 di bawah.
+    kode="${kode: -3}"
+    if [ "$2" = halaman ]; then
+      case "$kode" in
+        2??|3??) log "asap OK $1 → $kode" ;;
+        *) log "asap GAGAL $1 → $kode"; gagal=$((gagal + 1)) ;;
+      esac
+    else
+      case "$kode" in
+        000|5??) log "asap GAGAL $1 → $kode"; gagal=$((gagal + 1)) ;;
+        *) log "asap OK $1 → $kode" ;;
+      esac
+    fi
+  }
+  cek "/" halaman                  # proxy pengalih bahasa (308)
+  cek "/id" halaman                # beranda publik + peta
+  cek "/id/lapor" halaman          # form laporan
+  cek "/admin/login" halaman       # cangkang CMS (tanpa DB)
+  cek "/robots.txt" halaman
+  cek "/sitemap.xml" halaman       # sekalian canary query DB events
+  cek "/api/forecasting?lat=-2.4&lon=118&zoom=5" tahan
+  [ "$gagal" -eq 0 ]
+}
+
+if wait_healthy && asap_rute; then
   rm -f "$ENV_ROLLBACK"
-  log "deploy $ROLE sukses dan sehat"
+  log "deploy $ROLE sukses, sehat, dan lolos asap rute"
   exit 0
 fi
 
 # ── 6. Gagal → rollback ──────────────────────────────────────────────────────
-log "health check gagal — memulai rollback"
+log "health check / asap rute gagal — memulai rollback"
 diagnostics
 
 if [ -f "$ENV_ROLLBACK" ]; then
