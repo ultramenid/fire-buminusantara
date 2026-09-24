@@ -3,6 +3,7 @@ import { prisma } from "./prisma";
 import { bagiRelKanan } from "./rel-kanan";
 import { inferPulau, inferProvinsi, rapikanLokasi, PROVINSI_PETA_NAMA } from "./wilayah";
 import { urlMedia, itemMedia, type ItemMedia } from "./media";
+import type { Bahasa } from "./bahasa";
 
 /** Bentuk satu kartu berita, sama persis dengan payload FireController lama. */
 export type Berita = {
@@ -41,34 +42,51 @@ export type Berita = {
   jumlahKomentar?: number;
 };
 
-const tanggalId = new Intl.DateTimeFormat("id-ID", {
-  day: "numeric",
-  month: "long",
-  year: "numeric",
-});
+/** Pemformat tanggal per bahasa — dipilih sesuai locale, bukan hardcode id-ID.
+ *  Inggris tidak disediakan Intl khusus supaya hasilnya konsisten di server. */
+const tanggalPerBahasa: Record<Bahasa, Intl.DateTimeFormat> = {
+  id: new Intl.DateTimeFormat("id-ID", { day: "numeric", month: "long", year: "numeric" }),
+  en: new Intl.DateTimeFormat("en-US", { day: "numeric", month: "long", year: "numeric" }),
+};
 
+/** Kolom yang selalu dibaca, apa pun bahasanya — versi EN dibaca bersamaan
+ *  supaya PILIH tidak perlu bercabang per bahasa; kosong/null jatuh kembali
+ *  ke versi Indonesia di keBerita. */
 const PILIH = {
-  id: true, slug: true, title_id: true, description_id: true, event_date: true, location: true,
+  id: true, slug: true, title_id: true, title_en: true,
+  description_id: true, description_en: true, event_date: true, location: true,
   location_lat: true, location_lng: true,
-  image_id: true, video: true, media: true, orientation: true,
+  image_id: true, image_en: true, video: true, media: true, orientation: true,
 } as const;
 
 type Baris = {
-  id: bigint; slug: string | null; title_id: string; description_id: string | null;
+  id: bigint; slug: string | null; title_id: string; title_en: string;
+  description_id: string | null; description_en: string | null;
   event_date: Date; location: string; location_lat: unknown; location_lng: unknown;
-  image_id: string | null; video: string | null;
+  image_id: string | null; image_en: string | null; video: string | null;
   media: unknown;
   orientation: string;
 };
 
-function keBerita(e: Baris): Berita {
+/** Versi Inggris yang dipakai: teks EN hanya kalau tidak kosong — kosong atau
+ *  null jatuh kembali ke Indonesia supaya kartu EN tak pernah tampil kosong. */
+function enAtauId(en: string | null | undefined, id: string): string {
+  return en?.trim() ? en : id;
+}
+
+function keBerita(e: Baris, bahasa: Bahasa): Berita {
   const mediaList = itemMedia(e.media, e.image_id, e.video);
-  // Thumbnail kejadian: gambar utama → foto galeri → poster video (urutan sama
-  // dengan pratinjau admin). Fallback poster video menjaga kejadian yang hanya
-  // bervideo tetap punya thumbnail untuk pratinjau bagikan (og:image) — tanpa
-  // itu, tautannya dibagikan tanpa gambar sama sekali.
+  // Judul/deskripsi/alt sesuai bahasa — EN kosong kembali ke ID (fallback).
+  const judul = bahasa === "en" ? enAtauId(e.title_en, e.title_id) : e.title_id;
+  const deskripsi =
+    bahasa === "en" ? enAtauId(e.description_en, e.description_id ?? "") : e.description_id;
+  // Thumbnail kejadian: gambar utama versi bahasa (EN kosong → ID) → foto
+  // galeri → poster video (urutan sama dengan pratinjau admin). Fallback
+  // poster video menjaga kejadian yang hanya bervideo tetap punya thumbnail
+  // untuk pratinjau bagikan (og:image) — tanpa itu, tautannya dibagikan tanpa
+  // gambar sama sekali.
   const poster =
-    urlMedia(e.image_id) ??
+    urlMedia(bahasa === "en" ? (e.image_en?.trim() ? e.image_en : e.image_id) : e.image_id) ??
     (mediaList.find((m) => m.jenis === "gambar")?.url ?? null) ??
     mediaList.find((m) => m.poster)?.poster ??
     null;
@@ -80,20 +98,20 @@ function keBerita(e: Baris): Berita {
     slug: e.slug,
     pulau: inferPulau(e.location),
     provinsi: inferProvinsi(e.location),
-    tanggal: tanggalId.format(e.event_date),
-    judul: e.title_id,
+    tanggal: tanggalPerBahasa[bahasa].format(e.event_date),
+    judul,
     // Payload ini menyeberang ke komponen klien; tanpa foto asli, `gambar`
     // dibiarkan null — tidak ada foto dummy lagi. Yang memakainya (mis. kartu
     // dan pop-up) menampilkan placeholder sendiri.
     gambar: poster,
-    alt: e.title_id,
+    alt: judul,
     video: urlMedia(e.video),
     poster,
     lokasi: rapikanLokasi(e.location),
     // Decimal Prisma, bukan number — dijadikan number sekali di sini seperti id.
     lat: Number(e.location_lat),
     lng: Number(e.location_lng),
-    deskripsi: e.description_id,
+    deskripsi,
     media: mediaList,
     vertikal: e.orientation === "horizontal",
   };
@@ -120,7 +138,7 @@ export const UMPAN_AWAL = 24;
  * baru dulu). Jadi pengunjung langsung melihat laporan terbaru, sekaligus
  * laporan-laporan yang paling ramai dibahas.
  */
-export async function ambilBerita(limit = 10): Promise<Berita[]> {
+export async function ambilBerita(bahasa: Bahasa = "id", limit = 10): Promise<Berita[]> {
   const [semua, hitung] = await Promise.all([
     // event_date bisa seri (beberapa laporan setanggal) — id menaik dipakai
     // pemecah seri supaya "paling baru" benar-benar yang terakhir dibuat.
@@ -156,7 +174,7 @@ export async function ambilBerita(limit = 10): Promise<Berita[]> {
   });
 
   const urut = terbaru ? [terbaru, ...sisa] : sisa;
-  return urut.slice(0, limit).map((b) => keBerita(b as Baris));
+  return urut.slice(0, limit).map((b) => keBerita(b as Baris, bahasa));
 }
 
 /**
@@ -164,6 +182,7 @@ export async function ambilBerita(limit = 10): Promise<Berita[]> {
  * (komentar terbanyak, di luar lima terbaru supaya tidak ganda).
  */
 export async function ambilRelKanan(
+  bahasa: Bahasa = "id",
   baru = 5,
   ramai = 5,
 ): Promise<{ terbaru: Berita[]; populer: Berita[]; komentar: Record<string, number> }> {
@@ -201,8 +220,8 @@ export async function ambilRelKanan(
   const { terbaru, populer } = bagiRelKanan(semua, jumlahKomentar, baru, ramai);
 
   return {
-    terbaru: terbaru.map((b) => keBerita(b as Baris)),
-    populer: populer.map((b) => keBerita(b as Baris)),
+    terbaru: terbaru.map((b) => keBerita(b as Baris, bahasa)),
+    populer: populer.map((b) => keBerita(b as Baris, bahasa)),
     /* Peringkatnya, bukan laporannya: rel kanan mode arsip penuh mengurutkan
        `berita` yang sudah ada di klien dengan angka ini. Mengirim daftar
        laporan populer yang panjang berarti objek yang sama dikirim dua kali
@@ -220,7 +239,7 @@ export async function ambilRelKanan(
  * angka yang benar. Urutannya murni terbaru dulu (tanpa campuran komentar):
  * pop-up adalah arsip lengkap, bukan etalase.
  */
-export async function ambilSemuaBerita(): Promise<Berita[]> {
+export async function ambilSemuaBerita(bahasa: Bahasa = "id"): Promise<Berita[]> {
   // Mode contoh — lihat ambilRelKanan di atas.
   if (process.env.PETA_DUMMY === "1") {
     const { BERITA_CONTOH } = await import("./contoh-peta");
@@ -232,7 +251,7 @@ export async function ambilSemuaBerita(): Promise<Berita[]> {
     orderBy: [{ event_date: "desc" }, { id: "desc" }],
     select: PILIH,
   });
-  return semua.map((b) => keBerita(b as Baris));
+  return semua.map((b) => keBerita(b as Baris, bahasa));
 }
 
 /**
@@ -245,7 +264,7 @@ export async function ambilSemuaBerita(): Promise<Berita[]> {
  * "komentar" (moderasi). Komentar publik baru tidak membatalkan tag apa pun,
  * jadi umur "minutes" yang menjaga angkanya paling lama basi ~1 menit.
  */
-export async function ambilUmpan(): Promise<Berita[]> {
+export async function ambilUmpan(bahasa: Bahasa = "id"): Promise<Berita[]> {
   "use cache";
   cacheLife("minutes");
   cacheTag("kejadian", "komentar");
@@ -275,20 +294,20 @@ export async function ambilUmpan(): Promise<Berita[]> {
     if (h.commentable_id != null) jumlahKomentar.set(Number(h.commentable_id), h._count);
   }
   return semua.map((b) => ({
-    ...keBerita(b as Baris),
+    ...keBerita(b as Baris, bahasa),
     jumlahKomentar: jumlahKomentar.get(Number(b.id)) ?? 0,
   }));
 }
 
 /** Satu kejadian lewat permalink /fire/<slug>. */
-export async function ambilBeritaSlug(slug: string): Promise<Berita | null> {
+export async function ambilBeritaSlug(slug: string, bahasa: Bahasa = "id"): Promise<Berita | null> {
   "use cache";
   cacheLife("hours");
   cacheTag("kejadian");
   // findFirst, bukan findUnique: slug tetap unik, tapi saringan tayang harus
   // ikut masuk where — draft yang di-permalink-kan langsung harus 404.
   const baris = await prisma.events.findFirst({ where: { slug, ...TAYANG }, select: PILIH });
-  return baris ? keBerita(baris as Baris) : null;
+  return baris ? keBerita(baris as Baris, bahasa) : null;
 }
 
 /**
@@ -313,7 +332,7 @@ export async function hitungLaporanProvinsi(): Promise<Record<string, number>> {
     PROVINSI_PETA_NAMA.map((n) => [n, 0]),
   );
 
-  for (const { provinsi } of await ambilUmpan()) {
+  for (const { provinsi } of await ambilUmpan("id")) {
     // Lokasi yang tidak menyebut provinsi mana pun sengaja tidak dihitung —
     // lebih baik tidak terhitung daripada masuk kolom yang salah.
     if (provinsi) jumlah[provinsi]++;

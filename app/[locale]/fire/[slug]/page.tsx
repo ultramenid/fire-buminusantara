@@ -57,19 +57,23 @@ type Props = {
  * 404 tetap 404 sampai kejadiannya benar-benar dibuat, dan pembuatannya
  * membatalkan tag ini.
  */
-async function ambilMetaKejadian(slug: string) {
+async function ambilMetaKejadian(slug: string, bahasa: Bahasa) {
   "use cache";
   cacheLife("hours");
   cacheTag("kejadian");
-  const [kejadian, seo] = await Promise.all([ambilBeritaSlug(slug), ambilRincianSeo(slug)]);
+  const [kejadian, seo] = await Promise.all([
+    ambilBeritaSlug(slug, bahasa),
+    ambilRincianSeo(slug),
+  ]);
   return { kejadian, seo };
 }
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { locale, slug } = await params;
   if (!adaBahasa(locale)) notFound();
+  const bahasa: Bahasa = locale;
 
-  const { kejadian, seo } = await ambilMetaKejadian(slug);
+  const { kejadian, seo } = await ambilMetaKejadian(slug, bahasa);
   if (!kejadian) {
     notFound();
   }
@@ -195,7 +199,7 @@ async function IsiHalaman({
   await connection();
   const [jumlahLaporan, semuaBerita, sorotan, kolomAwal] = await Promise.all([
     hitungLaporanProvinsi(),
-    ambilUmpan(),
+    ambilUmpan(bahasa),
     ambilSorotan(),
     ambilKolomUmpanAwal(),
   ]);
@@ -235,13 +239,14 @@ export default async function HalamanKejadian({ params }: Props) {
   await connection();
   const { locale, slug } = await params;
   if (!adaBahasa(locale)) notFound();
+  const bahasa: Bahasa = locale;
 
   // Validasi slug sebelum memasuki Suspense boundary agar Next.js mengirimkan
   // HTTP status 404 yang benar alih-alih HTTP 200 soft 404.
-  const { kejadian, seo } = await ambilMetaKejadian(slug);
+  const { kejadian, seo } = await ambilMetaKejadian(slug, bahasa);
   if (!kejadian) notFound();
 
   // Tampilkan LandingKarhutla dengan rincian kejadian terbuka secara konsisten
   // di semua perangkat (seluler menggunakan rincian seluler baru, desktop modal 2-rel).
-  return <IsiHalaman bahasa={locale as Bahasa} slug={slug} kejadianAwal={kejadian} seo={seo} />;
+  return <IsiHalaman bahasa={bahasa} slug={slug} kejadianAwal={kejadian} seo={seo} />;
 }

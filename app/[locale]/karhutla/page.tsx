@@ -75,7 +75,7 @@ export default async function HalamanKarhutla({ params }: Props) {
   await connection();
   const [jumlahLaporan, berita, sorotan, kolomAwal] = await Promise.all([
     hitungLaporanProvinsi(),
-    ambilUmpan(),
+    ambilUmpan(locale),
     ambilSorotan(),
     ambilKolomUmpanAwal(),
   ]);

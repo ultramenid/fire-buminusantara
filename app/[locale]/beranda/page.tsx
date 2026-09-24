@@ -89,8 +89,8 @@ async function IsiHalaman({ params }: Pick<PageProps<'/[locale]/beranda'>, 'para
   const bahasa: Bahasa = adaBahasa(locale) ? locale : "id";
   await connection();
   const [berita, semuaBerita, jumlahLaporan, tigaTeratas, statistik] = await Promise.all([
-    ambilBerita(),
-    ambilSemuaBerita(),
+    ambilBerita(bahasa),
+    ambilSemuaBerita(bahasa),
     hitungLaporanProvinsi(),
     ambilTigaTeratas(),
     ambilStatistik(bahasa),
