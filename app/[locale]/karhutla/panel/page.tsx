@@ -79,7 +79,7 @@ export default async function HalamanPanel({ params }: Props) {
   await connection();
   const [jumlahLaporan, berita, sorotan, kolomAwal] = await Promise.all([
     hitungLaporanProvinsi(),
-    ambilUmpan(),
+    ambilUmpan(locale),
     ambilSorotan(),
     ambilKolomUmpanAwal(),
   ]);
