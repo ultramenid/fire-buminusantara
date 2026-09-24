@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
-import { hitungLaporanProvinsi } from "@/lib/events";
+import { ambilUmpan, hitungLaporanProvinsi, UMPAN_AWAL } from "@/lib/events";
 import { ambilSorotan } from "@/lib/statistik-sorotan";
 import { ambilKolomUmpanAwal } from "@/lib/perangkat";
 import { LandingKarhutla } from "@/components/landing-karhutla";
@@ -69,10 +69,17 @@ export default async function HalamanPanel({ params }: Props) {
   const { locale } = await params;
   if (!adaBahasa(locale)) notFound();
 
-  // Peta mewarnai tiap provinsi menurut jumlah laporannya.
+  // Peta mewarnai tiap provinsi menurut jumlah laporannya. Umpan (potongan
+  // awal) ikut dikirim walau halaman ini tak merender umpannya: pop-up
+  // provinsi di peta membaca daftar laporan dari prop ini — tanpanya popup
+  // terbuka kosong. Sisa daftar dimuat klien dari /api/umpan begitu popup
+  // dibuka (butuhPenuh di komponen). Tanpa prop ini pula guard "prop berita
+  // berubah" di komponen membandingkan default [] yang baru tiap render —
+  // itulah biang "Too many re-renders" kemarin.
   await connection();
-  const [jumlahLaporan, sorotan, kolomAwal] = await Promise.all([
+  const [jumlahLaporan, berita, sorotan, kolomAwal] = await Promise.all([
     hitungLaporanProvinsi(),
+    ambilUmpan(),
     ambilSorotan(),
     ambilKolomUmpanAwal(),
   ]);
@@ -82,6 +89,8 @@ export default async function HalamanPanel({ params }: Props) {
       <LandingKarhutla
         bahasa={locale}
         jumlahLaporan={jumlahLaporan}
+        berita={berita.slice(0, UMPAN_AWAL)}
+        totalBerita={berita.length}
         sorotan={sorotan}
         tampil="panel"
         kolomAwal={kolomAwal}

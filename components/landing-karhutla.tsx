@@ -1933,11 +1933,18 @@ export function IsiSaranLokasi({ daftar, indeks, memuat, bahasa, onSorot, onPili
   );
 }
 
+/* Default prop `berita` — WAJIB konstanta modul, bukan literal `[]` di
+   parameter: literal dievaluasi ulang jadi array baru di setiap render,
+   sehingga guard "prop berubah" di bawah (beritaAwal !== beritaAwalLama)
+   tak pernah puas di halaman yang memanggil tanpa berita (mis. /panel) —
+   setState saat render berputar tanpa henti → "Too many re-renders". */
+const BERITA_KOSONG: Berita[] = [];
+
 export function LandingKarhutla(
   {
     bahasa,
     jumlahLaporan,
-    berita: beritaAwal = [],
+    berita: beritaAwal = BERITA_KOSONG,
     totalBerita = 0,
     tampil = "semua",
     statistik,
