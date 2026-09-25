@@ -73,15 +73,29 @@ export async function daftarReaksi(halaman = 1, batas = 15): Promise<HasilDaftar
 /** Hitung reaksi per kejadian: berapa like & dislike pada semua komentarnya. */
 export const reaksiPerKejadian = unstable_cache(
   async () => {
-    const hasil = await prisma.comments.groupBy({
-      by: ["commentable_id"],
-      where: { commentable_type: TIPE },
-      _count: { _all: true },
+    const baris = await prisma.comment_reactions.findMany({
+      where: {
+        comments: {
+          commentable_type: TIPE,
+          commentable_id: { not: null },
+        },
+      },
+      select: {
+        comments: {
+          select: { commentable_id: true },
+        },
+      },
     });
 
-    const idKejadian = hasil
-      .map((h) => Number(h.commentable_id))
-      .filter((id) => Number.isFinite(id) && id > 0);
+    const hitungan = new Map<number, number>();
+    for (const r of baris) {
+      const id = Number(r.comments?.commentable_id);
+      if (Number.isFinite(id) && id > 0) {
+        hitungan.set(id, (hitungan.get(id) ?? 0) + 1);
+      }
+    }
+
+    const idKejadian = [...hitungan.keys()];
 
     const kejadian = idKejadian.length
       ? await prisma.events.findMany({
@@ -92,13 +106,13 @@ export const reaksiPerKejadian = unstable_cache(
 
     const petaE = new Map(kejadian.map((e) => [Number(e.id), e]));
 
-    return hasil
-      .map((h) => ({
-        kejadianId: Number(h.commentable_id),
-        jumlahReaksi: h._count._all,
-        judul: petaE.get(Number(h.commentable_id))?.title_id ?? "Kejadian terhapus",
+    return idKejadian
+      .map((id) => ({
+        kejadianId: id,
+        jumlahReaksi: hitungan.get(id) ?? 0,
+        judul: petaE.get(id)?.title_id ?? "Kejadian terhapus",
       }))
-      .filter((x) => x.kejadianId > 0)
+      .filter((x) => x.kejadianId > 0 && x.jumlahReaksi > 0)
       .sort((a, b) => b.jumlahReaksi - a.jumlahReaksi);
   },
   ["admin-reaksi-per-kejadian"],

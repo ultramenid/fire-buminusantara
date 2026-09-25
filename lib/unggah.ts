@@ -1,6 +1,9 @@
 import { randomUUID } from "node:crypto";
+import { createWriteStream } from "node:fs";
 import { writeFile, mkdir, unlink, stat, copyFile, readFile, mkdtemp, rm } from "node:fs/promises";
 import { execFile } from "node:child_process";
+import { Readable } from "node:stream";
+import { pipeline } from "node:stream/promises";
 import { promisify } from "node:util";
 import os from "node:os";
 import path from "node:path";
@@ -93,11 +96,13 @@ export async function simpanBerkas(
   if (berkas.size === 0) return { galat: "Berkas kosong." };
   if (berkas.size > 100 * 1024 * 1024) return { galat: "Ukuran berkas melebihi 100 MB." };
 
-  // Baca isinya SEKALI, lalu tentukan jenis dari byte-nya — bukan dari MIME
-  // atau nama berkas yang dikirim klien. Buffer yang sama dipakai untuk unggah
-  // dan untuk cadangan lokal, jadi tidak dibaca dua kali.
-  const isi = Buffer.from(await berkas.arrayBuffer());
-  const mime = deteksiMime(isi);
+  // Baca 16 byte pertama untuk magic byte, tanpa memuat seluruh 100 MB ke memori.
+  const slice16 = Buffer.from(
+    typeof berkas.slice === "function"
+      ? await berkas.slice(0, 16).arrayBuffer()
+      : (await berkas.arrayBuffer()).slice(0, 16),
+  );
+  const mime = deteksiMime(slice16);
   if (!mime) return { galat: "Jenis berkas tidak didukung." };
 
   const info = JENIS_MEDIA[mime];
@@ -109,18 +114,19 @@ export async function simpanBerkas(
 
   const cfg = getConfig();
   // Nama & ekstensi dari hasil deteksi, bukan dari nama berkas kiriman.
-  // Foldernya ikut jenis berkas (gambar/ atau video/), kecuali bila pemanggil
-  // menyebut sendiri — dipakai poster video, yang ditaruh di poster/ terpisah:
-  // ia turunan server, bukan pilihan pengunggah, dan mencampurnya ke gambar/
-  // membuat isi folder itu tidak lagi bisa diaudit sebagai "kiriman pengguna".
   const relatif = `${folder ?? info.jenis}/${randomUUID()}.${info.ext}`;
 
   try {
+    const stream = typeof berkas.stream === "function"
+      ? Readable.fromWeb(berkas.stream() as unknown as Parameters<typeof Readable.fromWeb>[0])
+      : Readable.from(Buffer.from(await berkas.arrayBuffer()));
+
     await getMinioClient().send(
       new PutObjectCommand({
         Bucket: cfg.bucket,
         Key: relatif,
-        Body: isi,
+        Body: stream,
+        ContentLength: berkas.size,
         ContentType: mime,
       }),
     );
@@ -135,14 +141,14 @@ export async function simpanBerkas(
     const err = error instanceof Error ? error : { message: String(error), name: "Unknown" };
     console.error("[Upload ERROR]", { message: err.message, code: err.name });
 
-    // Cadangan ke penyimpanan lokal. Ini menyelamatkan berkasnya, TAPI dulu
-    // hasilnya dilaporkan seolah sukses penuh — unggahan yang tidak pernah
-    // sampai ke MinIO terlihat normal di CMS. Sekarang jalur ini dicatat
-    // dengan jelas supaya bisa dibedakan dari unggahan yang benar-benar naik.
+    // Cadangan ke penyimpanan lokal saat MinIO tidak terjangkau.
     try {
       const penuh = path.join(AKAR_MEDIA, relatif);
       await mkdir(path.dirname(penuh), { recursive: true });
-      await writeFile(penuh, isi);
+      const streamLokal = typeof berkas.stream === "function"
+        ? Readable.fromWeb(berkas.stream() as unknown as Parameters<typeof Readable.fromWeb>[0])
+        : Readable.from(Buffer.from(await berkas.arrayBuffer()));
+      await pipeline(streamLokal, createWriteStream(penuh));
       console.warn("[Upload FALLBACK] MinIO gagal, berkas disimpan lokal:", {
         path: penuh, alasanMinio: err.message,
       });
@@ -158,25 +164,87 @@ export async function simpanBerkas(
 }
 
 /**
+ * Hasilkan poster video dari file lokal sementara sebelum atau saat unggah,
+ * tanpa mengunduh ulang seluruh video dari S3.
+ */
+export async function bingkaiVideoDariBerkas(berkas: File): Promise<string | null> {
+  let kerja: string;
+  try {
+    kerja = await mkdtemp(path.join(os.tmpdir(), "bingkai-"));
+  } catch {
+    return null;
+  }
+  const masukan = path.join(kerja, "masukan");
+  const keluaran = path.join(kerja, "bingkai.jpg");
+
+  try {
+    const stream = typeof berkas.stream === "function"
+      ? Readable.fromWeb(berkas.stream() as unknown as Parameters<typeof Readable.fromWeb>[0])
+      : Readable.from(Buffer.from(await berkas.arrayBuffer()));
+    await pipeline(stream, createWriteStream(masukan));
+
+    for (const lompat of ["1", "0"]) {
+      try {
+        await jalankanFfmpeg(
+          "ffmpeg",
+          ["-nostdin", "-y", "-ss", lompat, "-i", masukan, "-frames:v", "1",
+           "-vf", "scale=min(720\\,iw):-2", "-q:v", "4", keluaran],
+          { timeout: 20_000 },
+        );
+        if (await stat(keluaran).then(() => true).catch(() => false)) {
+          const posterBuf = await readFile(keluaran);
+          const hasil = await simpanBerkas(
+            new File([posterBuf], "bingkai.jpg", { type: "image/jpeg" }),
+            "gambar",
+            "poster",
+          );
+          return "galat" in hasil ? null : hasil.path;
+        }
+      } catch {
+        // Coba offset berikutnya jika video < 1 detik
+      }
+    }
+    return null;
+  } catch {
+    return null;
+  } finally {
+    await rm(kerja, { recursive: true, force: true });
+  }
+}
+
+/**
  * Simpan satu berkas galeri; satu input menerima gambar dan video sekaligus,
- * jadi jenisnya TIDAK diberitahukan di muka — simpanBerkas() menentukannya dari
- * isi berkas. Kategori dibaca kembali dari path hasil (`gambar/…` atau
- * `video/…`), bukan dari MIME klien.
+ * jadi jenisnya TIDAK diberitahukan di muka — deteksiMime menentukannya dari
+ * 16 byte awal berkas.
  *
- * Setiap video langsung dibekali posternya (`poster`): bingkai di detik
- * pertamanya, diunggah sebagai gambar tersendiri. Tanpa itu kartu korsel yang
- * belum giliran diputar menampilkan kotak kosong — video memang tidak
- * diunduh sampai kartunya di tengah.
+ * Setiap video langsung dibekali posternya (`poster`) yang diekstrak langsung
+ * dari file/stream lokal sementara sebelum unggah, sehingga tidak perlu
+ * mengunduh video kembali dari S3.
  */
 export async function simpanBerkasGaleri(
   berkas: File,
 ): Promise<{ path: string; type: "image" | "video"; poster?: string } | { galat: string }> {
+  const slice16 = Buffer.from(
+    typeof berkas.slice === "function"
+      ? await berkas.slice(0, 16).arrayBuffer()
+      : (await berkas.arrayBuffer()).slice(0, 16),
+  );
+  const mime = deteksiMime(slice16);
+  const isVideo = mime && JENIS_MEDIA[mime]?.jenis === "video";
+
+  let poster: string | null = null;
+  if (isVideo) {
+    poster = await bingkaiVideoDariBerkas(berkas);
+  }
+
   const hasil = await simpanBerkas(berkas);
-  if ("galat" in hasil) return hasil;
+  if ("galat" in hasil) {
+    if (poster) await hapusBerkas(poster);
+    return hasil;
+  }
   const video = hasil.path.startsWith(`${AWALAN_LOKAL}video/`);
   if (!video) return { path: hasil.path, type: "image" };
 
-  const poster = await bingkaiVideo(hasil.path);
   return poster
     ? { path: hasil.path, type: "video", poster }
     : { path: hasil.path, type: "video" };
@@ -377,10 +445,10 @@ function waktuExif(raw: unknown): string | undefined {
  * `null` bila bukan berkas ber-metadata atau tak ada satu pun dari data itu —
  * pemanggil menyembunyikan barisnya, bukan menampilkan kolom kosong.
  */
-export async function exifDariPath(pathSimpan: string): Promise<ExifFoto | null> {
-  const buf = await bacaByte(pathSimpan);
-  if (!buf) return null;
-
+/**
+ * Ekstrak GPS dan waktu pengambilan dari buffer berkas (foto/video).
+ */
+export async function exifDariBuffer(buf: Buffer): Promise<ExifFoto | null> {
   const hasil: ExifFoto = {};
 
   // Video: hanya GPS, via parser QuickTime ISO6709 (exifr tak mendukung MP4).
@@ -413,6 +481,27 @@ export async function exifDariPath(pathSimpan: string): Promise<ExifFoto | null>
   } catch {
     return null;
   }
+}
+
+/**
+ * Ekstrak metadata EXIF langsung dari objek File lokal sebelum diunggah ke S3.
+ */
+export async function exifDariBerkas(berkas: File): Promise<ExifFoto | null> {
+  try {
+    const buf = Buffer.from(await berkas.arrayBuffer());
+    return await exifDariBuffer(buf);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Baca GPS + waktu pengambilan dari metadata berkas tersimpan.
+ */
+export async function exifDariPath(pathSimpan: string): Promise<ExifFoto | null> {
+  const buf = await bacaByte(pathSimpan);
+  if (!buf) return null;
+  return exifDariBuffer(buf);
 }
 
 /**

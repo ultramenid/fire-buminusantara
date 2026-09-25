@@ -1,6 +1,5 @@
-import { NextResponse } from "next/server";
 import { saranDariTitik } from "@/lib/geo";
-import { bacaSesi, bolehKelola } from "@/lib/sesi";
+import { pastikanBolehKelola } from "@/lib/sesi";
 
 /**
  * Saran nama "ikuti pin" untuk form kejadian.
@@ -12,20 +11,20 @@ import { bacaSesi, bolehKelola } from "@/lib/sesi";
  * untuk pengguna CMS.
  */
 export async function GET(req: Request) {
-  const sesi = await bacaSesi();
-  if (!sesi || !bolehKelola(sesi.peran)) {
-    return NextResponse.json({ message: "Tidak berwenang." }, { status: 403 });
+  const sesi = await pastikanBolehKelola();
+  if (!sesi) {
+    return Response.json({ message: "Tidak berwenang." }, { status: 403 });
   }
 
   const url = new URL(req.url);
   const lat = Number(url.searchParams.get("lat") ?? "");
   const lng = Number(url.searchParams.get("lng") ?? "");
   if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
-    return NextResponse.json({ message: "Koordinat tidak sah." }, { status: 400 });
+    return Response.json({ message: "Koordinat tidak sah." }, { status: 400 });
   }
 
   const saran = await saranDariTitik(lat, lng);
-  return NextResponse.json(
+  return Response.json(
     { saran },
     { headers: { "Cache-Control": "no-cache, no-store, must-revalidate" } },
   );

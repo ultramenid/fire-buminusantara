@@ -1,13 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import sharp from "sharp";
-import piexif from "piexifjs";
-import { gpsDariBerkas } from "./unggah.ts";
-
-/** Pembagi derajat → pasangan rational DMS, sesuai format EXIF. */
-function R(n: number, d: number): [number, number] {
-  return [Math.round(n * d), d];
-}
+import { gpsDariBerkas, exifDariBerkas } from "./unggah.ts";
 
 /** JPEG kosong (tanpa EXIF GPS) sebagai gambar dasar penguji. */
 async function jpegPolos(): Promise<Buffer> {
@@ -20,21 +14,23 @@ async function jpegPolos(): Promise<Buffer> {
 
 /** JPEG + tag GPS EXIF (3°35'4"S, 98°40'33"E → lat -3.584444, lng 98.675833). */
 async function jpegDenganGps(): Promise<Buffer> {
-  const polos = await jpegPolos();
-  const exif = piexif.dump({
-    "0th": {},
-    Exif: {},
-    GPS: {
-      [piexif.GPSIFD.GPSVersionID]: [2, 3, 0, 0],
-      [piexif.GPSIFD.GPSLatitudeRef]: "S",
-      [piexif.GPSIFD.GPSLatitude]: [R(3, 1), R(35, 1), R(4, 10)],
-      [piexif.GPSIFD.GPSLongitudeRef]: "E",
-      [piexif.GPSIFD.GPSLongitude]: [R(98, 1), R(40, 1), R(33, 10)],
-    },
-    Interop: {},
-    "1st": {},
-  });
-  return Buffer.from(piexif.insert(exif, polos.toString("binary")), "binary");
+  return sharp({
+    create: { width: 8, height: 8, channels: 3, background: { r: 20, g: 180, b: 20 } },
+  })
+    .withMetadata({
+      exif: {
+        IFD0: { Make: "Simontini", Model: "FireCam S1" },
+        IFD2: { DateTimeOriginal: "2026:08:15 09:14:22", CreateDate: "2026:08:15 09:14:22" },
+        IFD3: {
+          GPSLatitudeRef: "S",
+          GPSLatitude: "3/1 35/1 4/1",
+          GPSLongitudeRef: "E",
+          GPSLongitude: "98/1 40/1 33/1",
+        },
+      },
+    })
+    .jpeg()
+    .toBuffer();
 }
 
 /** Bungkus Buffer sebagai File semampunya (hanya butuh arrayBuffer()). */
@@ -115,4 +111,13 @@ test("mengembalikan null untuk video tanpa metadata GPS", async () => {
   const video = Buffer.concat([box("ftyp", Buffer.from("isom", "latin1")), box("moov", mp4)]);
   const gps = await gpsDariBerkas(buatFile(video));
   assert.equal(gps, null);
+});
+
+test("exifDariBerkas membaca koordinat dan waktu pengambilan", async () => {
+  const file = buatFile(await jpegDenganGps());
+  const exif = await exifDariBerkas(file);
+  assert.ok(exif, "harus mengembalikan objek exif");
+  assert.ok(exif.lat !== undefined && Math.abs(exif.lat - -3.584444) < 0.001);
+  assert.ok(exif.lng !== undefined && Math.abs(exif.lng - 98.675833) < 0.001);
+  assert.ok(exif.waktu && exif.waktu.includes("Agustus 2026"));
 });

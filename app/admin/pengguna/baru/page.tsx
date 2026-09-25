@@ -3,7 +3,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { bacaSesi, bolehKelola } from "@/lib/sesi";
+import { wajibSesi } from "@/lib/sesi";
 import { HALAMAN, KopHalaman } from "../../kop-halaman";
 
 /** Pesan galat per kode di ?galat= — dibaca editor, bukan stack trace. */
@@ -19,16 +19,15 @@ export default async function TambahPengguna({
 }: {
   searchParams: Promise<{ galat?: string }>;
 }) {
-  const sesi = await bacaSesi();
-  if (!sesi || !bolehKelola(sesi.peran)) redirect("/admin/login");
+  const sesi = await wajibSesi();
   if (sesi.peran !== "admin") redirect("/admin");
 
   const { galat } = await searchParams;
 
   async function kirim(data: FormData) {
     "use server";
-    const s = await bacaSesi();
-    if (!s || s.peran !== "admin") redirect("/admin");
+    const s = await wajibSesi();
+    if (s.peran !== "admin") redirect("/admin");
 
     const nama = String(data.get("nama") ?? "").trim();
     const email = String(data.get("email") ?? "").trim().toLowerCase();

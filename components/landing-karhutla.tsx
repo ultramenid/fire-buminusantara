@@ -13,7 +13,8 @@ import { ambilStatistik, type Statistik as DataStatistik } from "@/lib/statistik
 import type { KunciSorotan } from "@/lib/statistik-sorotan-teks";
 import { type Bahasa } from "@/lib/bahasa";
 import type { Berita } from "@/lib/events";
-import { PULAU_TAB, waktuIso, waktuTeks } from "@/lib/tanggal";
+import { waktuIso, waktuTeks } from "@/lib/tanggal";
+import { PULAU_TAB } from "@/lib/wilayah";
 import { BilahSaringan, SaklarSegmen } from "@/components/bilah-saringan";
 import { useTheme } from "next-themes";
 import { useMounted } from "@/hooks/use-mounted";
@@ -680,14 +681,14 @@ export function LandingKarhutla(
   }, [laporan, kata, dariUmpan, sampaiUmpan]);
   const opsiWilayah = useMemo(() => [
     { kunci: "semua", label: t.semuaWilayah, jumlah: sebelumWilayah.length },
-    ...PULAU_TAB.map((tab) => ({
+    ...PULAU_TAB.map((tab: (typeof PULAU_TAB)[number]) => ({
       kunci: tab.kunci,
       label: tab.label,
       jumlah: sebelumWilayah.filter((l) => !!l.pulau && (tab.isi as readonly string[]).includes(l.pulau)).length,
     })),
   ], [sebelumWilayah, t.semuaWilayah]);
   const hasil = useMemo(() => {
-    const tab = PULAU_TAB.find((x) => x.kunci === wilayahUmpan);
+    const tab = PULAU_TAB.find((x: (typeof PULAU_TAB)[number]) => x.kunci === wilayahUmpan);
     const isi = tab ? (tab.isi as readonly string[]) : null;
     const tersaring = isi ? sebelumWilayah.filter((l) => !!l.pulau && isi.includes(l.pulau)) : sebelumWilayah;
     // Terbaru: tanggal kejadian, lalu id (yang dibuat belakangan dulu).

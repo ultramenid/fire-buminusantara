@@ -1,6 +1,5 @@
-import { NextResponse } from "next/server";
 import { cariLokasi } from "@/lib/geo";
-import { bacaSesi, bolehKelola } from "@/lib/sesi";
+import { pastikanBolehKelola } from "@/lib/sesi";
 
 /**
  * Pencarian lokasi untuk form kejadian.
@@ -9,14 +8,14 @@ import { bacaSesi, bolehKelola } from "@/lib/sesi";
  * peramban, dan hanya pengguna CMS yang boleh memakainya.
  */
 export async function GET(req: Request) {
-  const sesi = await bacaSesi();
-  if (!sesi || !bolehKelola(sesi.peran)) {
-    return NextResponse.json({ message: "Tidak berwenang." }, { status: 403 });
+  const sesi = await pastikanBolehKelola();
+  if (!sesi) {
+    return Response.json({ message: "Tidak berwenang." }, { status: 403 });
   }
 
   const url = new URL(req.url);
   const q = url.searchParams.get("q") ?? "";
   const geser = Math.max(0, parseInt(url.searchParams.get("offset") ?? "0", 10) || 0);
   const hasil = await cariLokasi(q, 10, geser);
-  return NextResponse.json({ hasil });
+  return Response.json({ hasil });
 }

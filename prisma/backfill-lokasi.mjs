@@ -1,7 +1,7 @@
 // Backfill lokasi kejadian: mengoreksi `events.location` yang masih berupa
 // koordinat mentah ("1.388094, 110.188716") atau label "sekitar …" warisan
 // aturan lama (tebakan desa tetangga yang nama desanya beda) menjadi nama
-// daerah menurut aturan baru: tepat (poligon desa) → provinsi Turf → angka.
+// daerah menurut aturan baru: tepat (poligon desa) → provinsi geometri → angka.
 //
 // Aman dijalankan berulang: angka mentah hanya disentuh bila cocok dengan
 // location_lat/lng-nya (bukti fallback, bukan ketikan admin); label "sekitar"
@@ -22,7 +22,7 @@ import { readFileSync } from "node:fs";
 import { PrismaClient } from "@prisma/client";
 import { PrismaMariaDb } from "@prisma/adapter-mariadb";
 import { Pool } from "pg";
-import booleanPointInPolygon from "@turf/boolean-point-in-polygon";
+import { titikDalamGeometri } from "../lib/geometri.ts";
 
 const APPLY = process.argv.includes("--apply");
 
@@ -69,7 +69,7 @@ function provinsiDariTitik(lat, lng) {
   if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
   for (const f of poligonProvinsi) {
     try {
-      if (!f?.geometry || !booleanPointInPolygon([lng, lat], f.geometry)) continue;
+      if (!f?.geometry || !titikDalamGeometri(lng, lat, f.geometry)) continue;
     } catch {
       continue;
     }
@@ -81,7 +81,7 @@ function provinsiDariTitik(lat, lng) {
 }
 
 /** Cermin logika berlapis lib/geo.ts (skrip .mjs tak bisa mengimpor TS):
- *  tepat → provinsi Turf → null. SENGAJA tanpa lapis "desa terdekat": nama
+ *  tepat → provinsi geometri → null. SENGAJA tanpa lapis "desa terdekat": nama
  *  desa tetangga yang beda wilayah menyesatkan — yang tak ter-cover data
  *  resmi cukup provinsi pasti, selebihnya angka + peringatan peninjau. */
 async function namaDaerah(lat, lng) {
@@ -98,7 +98,7 @@ async function namaDaerah(lat, lng) {
       const nama = tepat.rows[0]?.nama;
       if (typeof nama === "string" && nama.trim() !== "") return nama.trim();
     } catch {
-      /* DB geo gagal — jatuh ke lapis Turf di bawah */
+      /* DB geo gagal — jatuh ke lapis geometri di bawah */
     }
   }
   return provinsiDariTitik(lat, lng);

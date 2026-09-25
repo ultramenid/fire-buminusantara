@@ -1,6 +1,5 @@
 import { cacheLife, cacheTag } from "next/cache";
 import { prisma } from "./prisma";
-import { bagiRelKanan } from "./rel-kanan";
 import { inferPulau, inferProvinsi, rapikanLokasi, PROVINSI_PETA_NAMA } from "./wilayah";
 import { urlMedia, itemMedia, type ItemMedia } from "./media";
 import type { Bahasa } from "./bahasa";
@@ -56,14 +55,14 @@ const PILIH = {
   id: true, slug: true, title_id: true, title_en: true,
   description_id: true, description_en: true, event_date: true, location: true,
   location_lat: true, location_lng: true,
-  image_id: true, image_en: true, video: true, media: true, orientation: true,
+  image_id: true, video: true, media: true, orientation: true,
 } as const;
 
 type Baris = {
   id: bigint; slug: string | null; title_id: string; title_en: string;
   description_id: string | null; description_en: string | null;
   event_date: Date; location: string; location_lat: unknown; location_lng: unknown;
-  image_id: string | null; image_en: string | null; video: string | null;
+  image_id: string | null; video: string | null;
   media: unknown;
   orientation: string;
 };
@@ -80,13 +79,11 @@ function keBerita(e: Baris, bahasa: Bahasa): Berita {
   const judul = bahasa === "en" ? enAtauId(e.title_en, e.title_id) : e.title_id;
   const deskripsi =
     bahasa === "en" ? enAtauId(e.description_en, e.description_id ?? "") : e.description_id;
-  // Thumbnail kejadian: gambar utama versi bahasa (EN kosong → ID) → foto
-  // galeri → poster video (urutan sama dengan pratinjau admin). Fallback
-  // poster video menjaga kejadian yang hanya bervideo tetap punya thumbnail
-  // untuk pratinjau bagikan (og:image) — tanpa itu, tautannya dibagikan tanpa
-  // gambar sama sekali.
+  // Thumbnail kejadian: gambar utama → foto galeri → poster video
+  // (urutan sama dengan pratinjau admin). Fallback poster video menjaga kejadian
+  // yang hanya bervideo tetap punya thumbnail untuk pratinjau bagikan (og:image).
   const poster =
-    urlMedia(bahasa === "en" ? (e.image_en?.trim() ? e.image_en : e.image_id) : e.image_id) ??
+    urlMedia(e.image_id) ??
     (mediaList.find((m) => m.jenis === "gambar")?.url ?? null) ??
     mediaList.find((m) => m.poster)?.poster ??
     null;
@@ -177,58 +174,7 @@ export async function ambilBerita(bahasa: Bahasa = "id", limit = 10): Promise<Be
   return urut.slice(0, limit).map((b) => keBerita(b as Baris, bahasa));
 }
 
-/**
- * Isi rel kanan konsol /peta: 5 laporan terbaru + 5 laporan terpopuler
- * (komentar terbanyak, di luar lima terbaru supaya tidak ganda).
- */
-export async function ambilRelKanan(
-  bahasa: Bahasa = "id",
-  baru = 5,
-  ramai = 5,
-): Promise<{ terbaru: Berita[]; populer: Berita[]; komentar: Record<string, number> }> {
-  // Mode contoh (PETA_DUMMY=1, mis. pratinjau Vercel tanpa basis data):
-  // kembalikan data statis supaya halaman tetap tampil penuh.
-  if (process.env.PETA_DUMMY === "1") {
-    const { TERBARU_CONTOH, POPULER_CONTOH } = await import("./contoh-peta");
-    // Tanpa basis data tak ada komentar: peringkat kosong berarti filter
-    // "populer" jatuh ke urutan bawaan (terbaru dulu), bukan daftar kosong.
-    return { terbaru: TERBARU_CONTOH.slice(0, baru), populer: POPULER_CONTOH.slice(0, ramai), komentar: {} };
-  }
 
-  const [semua, hitung] = await Promise.all([
-    // event_date bisa seri — id menaik dipakai pemecah seri supaya "paling
-    // baru" benar-benar yang terakhir dibuat.
-    prisma.events.findMany({
-      where: TAYANG,
-      take: Math.max((baru + ramai) * 2, 100),
-      orderBy: [{ event_date: "desc" }, { id: "desc" }],
-      select: PILIH,
-    }),
-    // Komentar polimorfik ala Laravel, bukan relasi Prisma — dihitung terpisah.
-    prisma.comments.groupBy({
-      by: ["commentable_id"],
-      where: { commentable_type: "App\\Models\\Event", is_approved: true, commentable_id: { not: null } },
-      _count: true,
-    }),
-  ]);
-
-  const jumlahKomentar = new Map<number, number>();
-  for (const h of hitung) {
-    if (h.commentable_id != null) jumlahKomentar.set(Number(h.commentable_id), h._count);
-  }
-
-  const { terbaru, populer } = bagiRelKanan(semua, jumlahKomentar, baru, ramai);
-
-  return {
-    terbaru: terbaru.map((b) => keBerita(b as Baris, bahasa)),
-    populer: populer.map((b) => keBerita(b as Baris, bahasa)),
-    /* Peringkatnya, bukan laporannya: rel kanan mode arsip penuh mengurutkan
-       `berita` yang sudah ada di klien dengan angka ini. Mengirim daftar
-       laporan populer yang panjang berarti objek yang sama dikirim dua kali
-       dalam satu muatan halaman. Hanya laporan berkomentar yang terdaftar. */
-    komentar: Object.fromEntries(jumlahKomentar),
-  };
-}
 
 /**
  * SELURUH kejadian tayang untuk peta + pop-up wilayah — TANPA batas 10.
@@ -240,7 +186,7 @@ export async function ambilRelKanan(
  * pop-up adalah arsip lengkap, bukan etalase.
  */
 export async function ambilSemuaBerita(bahasa: Bahasa = "id"): Promise<Berita[]> {
-  // Mode contoh — lihat ambilRelKanan di atas.
+  // Mode contoh (PETA_DUMMY=1, mis. pratinjau Vercel tanpa basis data):
   if (process.env.PETA_DUMMY === "1") {
     const { BERITA_CONTOH } = await import("./contoh-peta");
     return BERITA_CONTOH;
@@ -268,7 +214,7 @@ export async function ambilUmpan(bahasa: Bahasa = "id"): Promise<Berita[]> {
   "use cache";
   cacheLife("minutes");
   cacheTag("kejadian", "komentar");
-  // Mode contoh — lihat ambilRelKanan di atas. Tanpa basis data tak ada
+  // Mode contoh (PETA_DUMMY=1): Tanpa basis data tak ada
   // komentar; semua laporan dianggap 0.
   if (process.env.PETA_DUMMY === "1") {
     const { BERITA_CONTOH } = await import("./contoh-peta");
@@ -322,7 +268,7 @@ export async function ambilBeritaSlug(slug: string, bahasa: Bahasa = "id"): Prom
  * sudah disimpulkan di keBerita), bukan pindai tabel kedua.
  */
 export async function hitungLaporanProvinsi(): Promise<Record<string, number>> {
-  // Mode contoh — lihat ambilRelKanan di atas.
+  // Mode contoh (PETA_DUMMY=1):
   if (process.env.PETA_DUMMY === "1") {
     const { JUMLAH_CONTOH } = await import("./contoh-peta");
     return { ...JUMLAH_CONTOH };

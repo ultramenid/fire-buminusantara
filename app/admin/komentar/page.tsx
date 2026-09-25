@@ -1,12 +1,11 @@
 import Link from "next/link";
-import { redirect } from "next/navigation";
 import { unstable_cache } from "next/cache";
 import { prisma } from "@/lib/prisma";
-import { bacaSesi, bolehKelola } from "@/lib/sesi";
+import { wajibSesi } from "@/lib/sesi";
 import { daftarKomentarModerasi } from "@/lib/moderasi-komentar";
 import { HALAMAN, KopHalaman } from "../kop-halaman";
 import { Paginasi } from "../paginasi";
-import { AksiKomentar } from "./aksi";
+import { AksiKomentar } from "./tombol-aksi";
 
 const PER_HALAMAN = 15;
 
@@ -32,8 +31,7 @@ export default async function Komentar({
 }: {
   searchParams: Promise<{ cari?: string; status?: string; kejadian?: string; halaman?: string; page?: string }>;
 }) {
-  const sesi = await bacaSesi();
-  if (!sesi || !bolehKelola(sesi.peran)) redirect("/admin/login");
+  const sesi = await wajibSesi();
 
   const params = await searchParams;
   const cari = params.cari;

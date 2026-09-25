@@ -75,7 +75,7 @@ function TeksKomentar({ nama, sebutan, isi }: { nama: string; sebutan?: string |
 /** Daftar komentar pada pop-up rincian — padanan markup kolom komentar di
  *  beranda.blade.php proyek Pasopati (x-for → .map). */
 export function UlasanKomentar({
-  daftar, memuat, galat,
+  daftar, memuat,
   tampilkanBalasan, alihkanBalasan, mulaiBalas,
   sebutanDari, isiTanpaSebutan,
 }: UlasanProps) {

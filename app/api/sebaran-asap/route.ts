@@ -20,19 +20,19 @@ export async function GET(req: NextRequest) {
     }
 
     if (mode === "frame") {
-      const timeChunkStr = searchParams.get("timeChunk") || searchParams.get("tc") || "116";
-      const stepStr = searchParams.get("step") || searchParams.get("s") || "0";
-      const timeInnerStr = searchParams.get("timeInner") || searchParams.get("ti") || "0";
+      const timeChunkStr = searchParams.get("timeChunk");
+      const stepStr = searchParams.get("step");
+      const timeInnerStr = searchParams.get("timeInner") ?? "0";
 
-      const timeChunk = parseInt(timeChunkStr, 10);
-      const step = parseInt(stepStr, 10);
+      const timeChunk = timeChunkStr !== null ? parseInt(timeChunkStr, 10) : NaN;
+      const step = stepStr !== null ? parseInt(stepStr, 10) : NaN;
       const timeInner = parseInt(timeInnerStr, 10);
 
-      if (isNaN(timeChunk) || isNaN(step)) {
-        return NextResponse.json({ error: "Invalid timeChunk or step parameter" }, { status: 400 });
+      if (Number.isNaN(timeChunk) || Number.isNaN(step)) {
+        return Response.json({ error: "Invalid timeChunk or step parameter" }, { status: 400 });
       }
 
-      const frameBuffer = await getZarrFrame(timeChunk, step, isNaN(timeInner) ? 0 : timeInner);
+      const frameBuffer = await getZarrFrame(timeChunk, step, Number.isNaN(timeInner) ? 0 : timeInner);
 
       // Kompresi respons di sini, bukan menunggu gzip nginx: jenis responsnya
       // application/octet-stream, yang tidak masuk gzip_types bawaan — tanpa

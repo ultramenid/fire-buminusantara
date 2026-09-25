@@ -1,11 +1,18 @@
-import { updateTag } from "next/cache";
-import { prisma } from "./prisma";
-import { umumkanTunggakan } from "./loket-tunggakan";
-import { bacaBerkasMedia, urlMedia, type BerkasMedia, type Orientasi } from "./media";
-import { simpanBerkasGaleri, hapusBerkas, gpsDariBerkas, exifDariPath, type ExifFoto } from "./unggah";
-import { turnstileSah } from "./turnstile";
-import { BATAS_BERKAS, BATAS_TOTAL_BYTE } from "./batas-laporan";
-import { promosiKeKejadian } from "./simpan-kejadian";
+import { prisma } from "./prisma.ts";
+import { umumkanTunggakan } from "./loket-tunggakan.ts";
+import { bacaBerkasMedia, urlMedia, type BerkasMedia, type Orientasi } from "./media.ts";
+import { simpanBerkasGaleri, hapusBerkas, exifDariBerkas, type ExifFoto } from "./unggah.ts";
+import { turnstileSah } from "./turnstile.ts";
+import { BATAS_BERKAS, BATAS_TOTAL_BYTE } from "./batas-laporan.ts";
+
+async function batalkanTag(tag: string) {
+  try {
+    const mod = await import("next/cache");
+    if (typeof mod.updateTag === "function") {
+      mod.updateTag(tag);
+    }
+  } catch {}
+}
 
 /** Status verifikasi, sama persis dengan enum di basis data. */
 export type StatusLaporan = "pending" | "approved" | "rejected";
@@ -86,6 +93,7 @@ function lampiranDari(media: unknown): Lampiran[] {
         poster,
         keterangan: berkas.keterangan,
         orientasi: berkas.orientasi,
+        exif: berkas.exif,
       });
     }
   }
@@ -190,23 +198,18 @@ export async function simpanLaporanPublik(
   }
 
   // Lokasi manual selalu lebih dihargai: koordinat dari EXIF hanya dipakai
-  // sebagai cadangan kalau pelapor tidak mengisi lat/lng sama sekali. Diambil
-  // dari gambar pertama yang punya metadata GPS.
+  // sebagai cadangan kalau pelapor tidak mengisi lat/lng sama sekali.
   let titikLaporan = titik ?? null;
-  if (!titikLaporan && berkas.length > 0) {
-    for (const b of berkas) {
-      const gps = await gpsDariBerkas(b);
-      if (gps) {
-        titikLaporan = gps;
-        break;
-      }
-    }
-  }
-
   const keteranganMedia = namaPelapor || "anonim";
 
   const media: BerkasMedia[] = [];
   for (const b of berkas) {
+    // Ekstrak metadata EXIF (GPS & waktu) dari berkas lokal sebelum unggah ke S3
+    const exif = await exifDariBerkas(b);
+    if (!titikLaporan && exif?.lat !== undefined && exif?.lng !== undefined) {
+      titikLaporan = { lat: exif.lat, lng: exif.lng };
+    }
+
     const hasil = await simpanBerkasGaleri(b);
     if ("galat" in hasil) {
       // Berkas yang sudah terlanjur naik dibuang lagi: laporan ini tidak jadi
@@ -217,7 +220,12 @@ export async function simpanLaporanPublik(
       }
       return { ok: false, galat: `${b.name}: ${hasil.galat}`, bidang: "berkas" };
     }
-    media.push({ ...hasil, keterangan: keteranganMedia });
+
+    const entri: BerkasMedia = { ...hasil, keterangan: keteranganMedia };
+    if (exif && (exif.lat !== undefined || exif.waktu !== undefined)) {
+      entri.exif = exif;
+    }
+    media.push(entri);
   }
 
   const sekarang = new Date();
@@ -330,37 +338,15 @@ export async function daftarLaporan(
   return { total, daftar: baris.map((r) => keLaporan(r as BarisLaporan)) };
 }
 
-/** Satu laporan untuk halaman detail. */
+/** Satu laporan untuk halaman detail. Metadata EXIF sudah tersimpan di JSON DB media saat unggah. */
 export async function ambilLaporan(id: number): Promise<LaporanPublik | null> {
   const baris = await prisma.public_reports.findUnique({ where: { id }, select: PILIH });
   if (!baris) return null;
 
-  const laporan = keLaporan(baris as BarisLaporan);
-
-  // Perkaya lampiran dengan metadata (GPS dari foto & video, waktu dari foto).
-  // Dikerjakan hanya di sini, bukan di daftar: tiap berkas perlu ditarik
-  // byte-nya dari penyimpanan. Dicocokkan lewat url — lampiranDari() melewati
-  // entri yang url-nya tak terbentuk, jadi indeksnya belum tentu sejajar dengan
-  // media mentahnya.
-  const exifPerUrl = new Map<string, ExifFoto>();
-  await Promise.all(
-    bacaBerkasMedia(baris.media).map(async (b) => {
-      const url = urlMedia(b.path);
-      if (!url) return;
-      const exif = await exifDariPath(b.path);
-      if (exif) exifPerUrl.set(url, exif);
-    }),
-  );
-
-  if (exifPerUrl.size > 0) {
-    laporan.lampiran = laporan.lampiran.map((l) => {
-      const exif = exifPerUrl.get(l.url);
-      return exif ? { ...l, exif } : l;
-    });
-  }
-
-  return laporan;
+  return keLaporan(baris as BarisLaporan);
 }
+
+export const ambilLaporanPublik = ambilLaporan;
 
 /** Tetangga sebuah laporan dalam antrean yang sedang disaring — dipakai tombol
  *  "berikutnya" di halaman detail, supaya peninjau bisa mengosongkan antrean
@@ -513,12 +499,7 @@ export async function aturStatusLaporan(
       return { ok: false, galat: "Status laporan telah diubah oleh peninjau lain." };
     }
 
-    try {
-      // Segera kedaluwarsa (bukan stale-while-revalidate): angka tunggakan di
-      // menu harus berubah pada refresh berikutnya, bukan pada muat ulang
-      // setelahnya. revalidateTag(tag, "max") memberi jendela basi terpanjang.
-      updateTag("tunggakan");
-    } catch {}
+    await batalkanTag("tunggakan");
     umumkanTunggakan();
     return { ok: true, idKejadian: null };
   }
@@ -555,6 +536,7 @@ export async function aturStatusLaporan(
         return { ok: false as const, galat: "Laporan sedang atau telah diverifikasi oleh peninjau lain." };
       }
 
+      const { promosiKeKejadian } = await import("./simpan-kejadian.ts");
       const promosi = await promosiKeKejadian(
         {
           title: laporan.title,
@@ -584,12 +566,10 @@ export async function aturStatusLaporan(
       galat: e instanceof Error ? e.message : "Gagal memverifikasi laporan.",
     };
   } finally {
-    try {
-      updateTag("tunggakan");
-      // Laporan yang disetujui naik jadi kejadian publik baru — metadata slug
-      // di halaman rincian di-cache, jadi tagnya ikut dibatalkan di sini.
-      updateTag("kejadian");
-    } catch {}
+    await batalkanTag("tunggakan");
+    // Laporan yang disetujui naik jadi kejadian publik baru — metadata slug
+    // di halaman rincian di-cache, jadi tagnya ikut dibatalkan di sini.
+    await batalkanTag("kejadian");
     umumkanTunggakan();
   }
 }
@@ -608,9 +588,7 @@ export async function hapusLaporan(id: number) {
     for (const berkas of bacaBerkasMedia(baris.media)) await hapusBerkas(berkas.path);
   }
   await prisma.public_reports.delete({ where: { id } });
-  try {
-    updateTag("tunggakan");
-  } catch {}
+  await batalkanTag("tunggakan");
   umumkanTunggakan();
 }
 

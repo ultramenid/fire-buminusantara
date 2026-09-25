@@ -49,6 +49,8 @@ export type BerkasMedia = {
   keterangan?: string;
   /** Orientasi yang dipilih peninjau (bisa kosong sebelum diverifikasi). */
   orientasi?: Orientasi;
+  /** GPS & waktu pengambilan dari EXIF foto/video yang tersimpan di JSON DB saat unggah. */
+  exif?: { lat?: number; lng?: number; waktu?: string };
 };
 
 /** Satu item galeri yang siap dirender. */
@@ -71,7 +73,7 @@ export function bacaBerkasMedia(nilai: unknown): BerkasMedia[] {
   const hasil: BerkasMedia[] = [];
   for (const item of nilai) {
     if (!item || typeof item !== "object") continue;
-    const { path, type, poster, keterangan, orientasi } = item as Record<string, unknown>;
+    const { path, type, poster, keterangan, orientasi, exif } = item as Record<string, unknown>;
     if (typeof path !== "string" || !path) continue;
     if (type !== "image" && type !== "video") continue;
 
@@ -82,6 +84,19 @@ export function bacaBerkasMedia(nilai: unknown): BerkasMedia[] {
     }
     if (orientasi === "potret" || orientasi === "lanskap") {
       berkas.orientasi = orientasi;
+    }
+    if (exif && typeof exif === "object") {
+      const e = exif as Record<string, unknown>;
+      const lat = typeof e.lat === "number" && Number.isFinite(e.lat) ? e.lat : undefined;
+      const lng = typeof e.lng === "number" && Number.isFinite(e.lng) ? e.lng : undefined;
+      const waktu = typeof e.waktu === "string" && e.waktu.trim() ? e.waktu.trim() : undefined;
+      if (lat !== undefined || lng !== undefined || waktu !== undefined) {
+        berkas.exif = {
+          ...(lat !== undefined ? { lat } : {}),
+          ...(lng !== undefined ? { lng } : {}),
+          ...(waktu !== undefined ? { waktu } : {}),
+        };
+      }
     }
     hasil.push(berkas);
   }

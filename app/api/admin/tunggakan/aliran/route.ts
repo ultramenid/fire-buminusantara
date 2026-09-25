@@ -1,4 +1,4 @@
-import { bacaSesi } from "@/lib/sesi";
+import { pastikanBolehKelola } from "@/lib/sesi";
 import { hitungTunggakan } from "@/lib/tunggakan";
 import { berlanggananTunggakan } from "@/lib/loket-tunggakan";
 
@@ -24,9 +24,9 @@ const JARING_MS = 30_000;
  * `next start` standalone.
  */
 export async function GET(req: Request) {
-  // Angka antrean moderasi bukan konsumsi publik. Cukup bersesi: menu yang
-  // menampilkan lencana ini pun hanya dipasang untuk sesi yang sah.
-  const sesi = await bacaSesi();
+  // Angka antrean moderasi bukan konsumsi publik. Hanya pengguna dengan peran
+  // yang berwenang (admin/editor) yang boleh mengakses aliran ini.
+  const sesi = await pastikanBolehKelola();
   if (!sesi) {
     return new Response("Tidak berwenang.", { status: 401 });
   }

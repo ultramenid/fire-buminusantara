@@ -2,14 +2,12 @@
 
 import { redirect } from "next/navigation";
 import { updateTag } from "next/cache";
-import { bacaSesi, bolehKelola } from "@/lib/sesi";
+import { wajibSesi } from "@/lib/sesi";
 import { umumkanTunggakan } from "@/lib/loket-tunggakan";
 import { aturPersetujuan, hapusKomentarModerasi } from "@/lib/moderasi-komentar";
 
 async function jaga() {
-  const sesi = await bacaSesi();
-  if (!sesi || !bolehKelola(sesi.peran)) redirect("/admin/login");
-  return sesi;
+  return wajibSesi();
 }
 
 /** Ubah status persetujuan komentar (server action). */

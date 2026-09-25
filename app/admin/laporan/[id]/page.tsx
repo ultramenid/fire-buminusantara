@@ -1,6 +1,6 @@
 import Link from "next/link";
-import { notFound, redirect } from "next/navigation";
-import { bacaSesi, bolehKelola } from "@/lib/sesi";
+import { notFound } from "next/navigation";
+import { wajibSesi } from "@/lib/sesi";
 import {
   ambilLaporan, laporanBerikutnya, adaStatus, NAMA_STATUS,
   type Lampiran, type StatusLaporan,
@@ -29,8 +29,7 @@ export default async function RincianLaporan({
   params: Promise<{ id: string }>;
   searchParams: Promise<{ status?: string }>;
 }) {
-  const sesi = await bacaSesi();
-  if (!sesi || !bolehKelola(sesi.peran)) redirect("/admin/login");
+  const sesi = await wajibSesi();
 
   const id = Number((await params).id);
   if (!Number.isInteger(id) || id <= 0) notFound();

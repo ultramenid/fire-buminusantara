@@ -1,5 +1,3 @@
-import { EventEmitter } from "node:events";
-
 /**
  * Loket kabar tunggakan CMS — pemicu instan lencana di menu admin.
  *
@@ -10,25 +8,20 @@ import { EventEmitter } from "node:events";
  * aliran SSE di app/api/admin/tunggakan/aliran mengirim angka baru ke setiap
  * tab CMS yang terbuka.
  *
- * SENGAJA emitter dalam-proses, bukan Redis/pub-sub: satu kontainer web
- * melayani pengirim laporan sekaligus tab CMS, jadi peristiwanya tidak perlu
- * menyeberang proses. Bila suatu saat webnya direplikasi, pengumuman dari
- * replika lain memang tidak sampai — itulah sebabnya alirannya TETAP mencek
- * database secara berkala sebagai jaring pengaman. Yang hilang cuma
- * keinstanannya, bukan kebenaran angkanya.
+ * SENGAJA target peristiwa dalam-proses berbasis web standard EventTarget,
+ * bukan Redis/pub-sub: satu kontainer web melayani pengirim laporan sekaligus
+ * tab CMS, jadi peristiwanya tidak perlu menyeberang proses. Bila suatu saat
+ * webnya direplikasi, pengumuman dari replika lain memang tidak sampai —
+ * itulah sebabnya alirannya TETAP mencek database secara berkala sebagai jaring
+ * pengaman. Yang hilang cuma keinstanannya, bukan kebenaran angkanya.
  *
- * Disimpan di globalThis supaya HMR `next dev` tidak menyisakan emitter yatim
+ * Disimpan di globalThis supaya HMR `next dev` tidak menyisakan instans yatim
  * setiap modul ini dikompilasi ulang: pelanggan lama akan menempel di instans
  * yang tak seorang pun mengumumkan lagi.
  */
-const ruang = globalThis as typeof globalThis & { __loketTunggakan?: EventEmitter };
+const ruang = globalThis as typeof globalThis & { __loketTunggakan?: EventTarget };
 
-const loket = (ruang.__loketTunggakan ??= new EventEmitter());
-
-// Satu pelanggan per tab CMS yang terbuka. Batas bawaan 10 akan memuntahkan
-// MaxListenersExceededWarning begitu sebelas tab dibuka — padahal itu justru
-// pemakaian normalnya.
-loket.setMaxListeners(0);
+const loket = (ruang.__loketTunggakan ??= new EventTarget());
 
 const PERISTIWA = "ubah";
 
@@ -37,14 +30,14 @@ export function umumkanTunggakan() {
   // Pengumuman tidak boleh menjatuhkan aksi yang memanggilnya: menyimpan
   // laporan sudah berhasil sebelum baris ini.
   try {
-    loket.emit(PERISTIWA);
+    loket.dispatchEvent(new Event(PERISTIWA));
   } catch {}
 }
 
 /** Berlangganan kabar perubahan. Kembaliannya melepas langganan. */
 export function berlanggananTunggakan(saatUbah: () => void): () => void {
-  loket.on(PERISTIWA, saatUbah);
+  loket.addEventListener(PERISTIWA, saatUbah);
   return () => {
-    loket.off(PERISTIWA, saatUbah);
+    loket.removeEventListener(PERISTIWA, saatUbah);
   };
 }

@@ -1,7 +1,7 @@
 "use server";
 
 import { redirect } from "next/navigation";
-import { bacaSesi, bolehKelola } from "@/lib/sesi";
+import { wajibSesi } from "@/lib/sesi";
 import {
   aturStatusLaporan, hapusLaporan, aturOrientasiLaporan, suntingLaporan,
   type StatusLaporan,
@@ -11,9 +11,7 @@ import type { Orientasi } from "@/lib/media";
 /** Server action terbuka lewat POST langsung, bukan cuma lewat tombol di CMS —
  *  jadi sesinya diperiksa di dalam setiap aksi, bukan sekali di halamannya. */
 async function jaga() {
-  const sesi = await bacaSesi();
-  if (!sesi || !bolehKelola(sesi.peran)) redirect("/admin/login");
-  return sesi;
+  return wajibSesi();
 }
 
 /** Putuskan satu laporan: terverifikasi, ditolak, atau dikembalikan ke antrean.

@@ -2,17 +2,34 @@ import { PrismaClient } from "@prisma/client";
 import { PrismaMariaDb } from "@prisma/adapter-mariadb";
 
 /**
- * Klien Prisma tunggal.
+ * Klien Prisma tunggal dengan Lazy Proxy Pattern.
  *
- * Sejak Prisma 7 koneksi tidak lagi dibaca dari schema.prisma melainkan lewat
- * driver adapter yang diberikan ke constructor.
+ * `new URL(process.env.DATABASE_URL)` tidak dievaluasi saat modul dimuat.
+ * Evaluasi dan inisialisasi koneksi MariaDB hanya terjadi ketika metode
+ * atau properti Prisma diakses untuk kueri.
  *
- * Instansnya disimpan di globalThis supaya hot reload Next.js tidak membuat
- * koneksi baru tiap kali berkas berubah — kalau tidak, pool MySQL habis setelah
- * beberapa kali simpan.
+ * Jika DATABASE_URL tidak disetel, error informatif dilempar saat kueri,
+ * bukan saat import sehingga tidak menggagalkan proses build/impor.
  */
-function buat() {
-  const url = new URL(process.env.DATABASE_URL ?? "");
+
+let _client: PrismaClient | null = null;
+
+function buat(): PrismaClient {
+  const dbUrl = process.env.DATABASE_URL;
+  if (!dbUrl) {
+    throw new Error(
+      "DATABASE_URL environment variable is not configured. Database operations cannot be executed.",
+    );
+  }
+
+  let url: URL;
+  try {
+    url = new URL(dbUrl);
+  } catch {
+    throw new Error(
+      `DATABASE_URL is invalid: "${dbUrl}". Database operations cannot be executed.`,
+    );
+  }
 
   return new PrismaClient({
     adapter: new PrismaMariaDb({
@@ -26,8 +43,32 @@ function buat() {
   });
 }
 
-const global_ = globalThis as unknown as { prisma?: ReturnType<typeof buat> };
+function getClient(): PrismaClient {
+  const global_ = globalThis as unknown as { prisma?: PrismaClient };
+  if (global_.prisma) return global_.prisma;
+  if (_client) return _client;
 
-export const prisma = global_.prisma ?? buat();
+  const client = buat();
+  _client = client;
+  if (process.env.NODE_ENV !== "production") {
+    global_.prisma = client;
+  }
+  return client;
+}
 
-if (process.env.NODE_ENV !== "production") global_.prisma = prisma;
+export const prisma: PrismaClient = new Proxy({} as PrismaClient, {
+  get(_target, prop) {
+    if (prop === "then") return undefined;
+    if (prop === Symbol.toStringTag) return "PrismaClient";
+    if (prop === "toJSON") return () => "[PrismaClient]";
+    if (prop === Symbol.for("nodejs.util.inspect.custom")) {
+      return () => "[PrismaClient Proxy]";
+    }
+    const client = getClient();
+    const value = Reflect.get(client, prop, client);
+    if (typeof value === "function") {
+      return value.bind(client);
+    }
+    return value;
+  },
+});

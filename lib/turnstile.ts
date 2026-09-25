@@ -20,13 +20,11 @@ export async function turnstileSah(token: string | null, ip: string | null): Pro
   const secret = process.env.TURNSTILE_SECRET_KEY;
   if (!secret) {
     // Fail-open HANYA di pengembangan; di produksi tidak ada secret = tidak lolos.
-    console.log("[turnstile] TIDAK ADA secret; NODE_ENV=", process.env.NODE_ENV);
     return process.env.NODE_ENV !== "production";
   }
   // Token Turnstile paling panjang 2048 karakter — yang lebih panjang dari itu
   // pasti bukan token sah, tidak ada gunanya mengirimkannya ke Cloudflare.
   if (!token || token.length > 2048) {
-    console.log("[turnstile] token kosong/tidak valid; panjang=", token ? token.length : 0);
     return false;
   }
 
@@ -48,10 +46,8 @@ export async function turnstileSah(token: string | null, ip: string | null): Pro
       signal: AbortSignal.timeout(10_000),
     });
     const data = await r.json();
-    console.log("[turnstile] siteverify →", data?.success, "err=", JSON.stringify(data?.["error-codes"]));
     return Boolean(data?.success);
-  } catch (e) {
-    console.log("[turnstile] siteverify EXCEPTION:", (e as Error)?.message);
+  } catch {
     return false;
   } finally {
     tokenInFlight.delete(token);
@@ -88,9 +84,9 @@ export function ipDari(req: Request): string | null {
   if (rantai.length === 0) return null;
 
   // Elemen ke-`hops` dari kanan = IP yang ditulis proxy terluar yang tepercaya.
-  // Kalau rantainya lebih pendek dari jumlah hop yang diklaim, ambil yang paling
-  // kiri yang tersedia — konfigurasi keliru tidak boleh malah membocorkan IP
-  // suntikan sebagai kalau-kalau sah.
-  const idx = rantai.length - hops;
-  return rantai[Math.max(0, idx)] ?? null;
+  // Kalau rantainya lebih pendek dari jumlah hop yang diklaim, tolak dan kembalikan null
+  // untuk mencegah IP spoofing dari header suntikan.
+  if (rantai.length < hops) return null;
+
+  return rantai[rantai.length - hops] ?? null;
 }

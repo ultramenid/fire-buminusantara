@@ -1,45 +1,55 @@
-import booleanPointInPolygon from "@turf/boolean-point-in-polygon";
+import { titikDalamGeometri } from "./geometri.ts";
+import { PUSAT_WILAYAH } from "./pusat-wilayah.ts";
 // Relatif (bukan "@/...") + atribut JSON supaya modul ini tetap bisa diuji
 // lewat node:test mentah — lihat lib/provinsi-titik.test.ts.
 import petaProvinsi from "../public/data/peta-provinsi.json" with { type: "json" };
 import { PROVINSI_PETA_NAMA, inferProvinsi } from "./wilayah.ts";
 
 /**
- * Provinsi yang poligonnya menaungi titik — analisis Turf atas poligon bawaan
+ * Provinsi yang poligonnya menaungi titik — analisis titik dalam poligon atas poligon bawaan
  * (public/data/peta-provinsi.json, 34 provinsi yang sama dengan peta).
  *
  * SENGAJA tidak memakai database: ini lapis terakhir reverse-geocode yang
  * tetap bekerja saat PostGIS Simontini tak terjangkau, dan tanpa satu pun
  * round-trip jaringan. Kasar (level provinsi) tapi PASTI — bukan perkiraan
- * seperti "desa terdekat". Modul ini khusus server: poligon + Turf jangan
+ * seperti "desa terdekat". Modul ini khusus server: poligon bawaan jangan
  * masuk bundle klien (lib/wilayah.ts yang dipakai komponen tidak boleh
  * mengimpornya).
  */
 type FiturProvinsi = {
   properties: { nama?: unknown };
-  geometry: Parameters<typeof booleanPointInPolygon>[1];
+  geometry: Parameters<typeof titikDalamGeometri>[2];
 };
 
 export function provinsiDariTitik(lat: number, lng: number): string | null {
   if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
   if (lat < -90 || lat > 90 || lng < -180 || lng > 180) return null;
 
-  const titik: [number, number] = [lng, lat];
   const fitur = (petaProvinsi as { features: FiturProvinsi[] }).features;
   if (!Array.isArray(fitur)) return null;
 
   for (const f of fitur) {
-    try {
-      if (!f?.geometry || !booleanPointInPolygon(titik, f.geometry)) continue;
-    } catch {
-      continue; // Geometri rusak: lanjut ke provinsi berikut.
-    }
     const nama = f.properties?.nama;
     // Nama poligon harus salah satu dari 34 kanonik — jangan kembalikan
     // ejaan tak dikenal yang memecah hitungan peta.
-    if (typeof nama === "string" && (PROVINSI_PETA_NAMA as string[]).includes(nama)) {
-      return nama;
+    if (typeof nama !== "string" || !(PROVINSI_PETA_NAMA as string[]).includes(nama)) {
+      continue;
     }
+
+    // Bounding-box early-exit pre-filter: lewati provinsi yang titiknya jelas
+    // berada di luar kotak pembatasnya untuk menghemat 90%+ kalkulasi titik sudut.
+    const kotak = PUSAT_WILAYAH[nama]?.kotak;
+    if (kotak && (lng < kotak[0] || lng > kotak[2] || lat < kotak[1] || lat > kotak[3])) {
+      continue;
+    }
+
+    try {
+      if (!f?.geometry || !titikDalamGeometri(lng, lat, f.geometry)) continue;
+    } catch {
+      continue; // Geometri rusak: lanjut ke provinsi berikut.
+    }
+
+    return nama;
   }
   return null;
 }

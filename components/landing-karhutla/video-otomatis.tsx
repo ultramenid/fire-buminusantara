@@ -13,13 +13,13 @@ export const UKURAN_FOTO_UMPAN = "(max-width: 359px) 100vw, (max-width: 1099px) 
 /* Video kartu umpan — tidak autoplay otomatis; pratinjau putar bisu hanya saat kursor melayang (hover).
    Klik membuka modal rincian yang memuat pemutar video lengkap dengan kendali.
    preload="none" mencegah unduhan data video sebelum interaksi, demi performa PageSpeed Insights. */
-export function VideoOtomatis({ url, poster, label, onBuka, tanpaMt = false, kredit = null, bahasa: _bahasa }: {
+export function VideoOtomatis({ url, poster, label, onBuka, tanpaMt = false, kredit = null }: {
   url: string; poster: string | null; label: string; onBuka: () => void;
   /** true di dalam carousel — margin atas milik wadah, bukan tombol. */
   tanpaMt?: boolean;
   /** Nama kredit untuk pil © — null = tanpa pil. */
   kredit?: string | null;
-  bahasa: Bahasa;
+  bahasa?: Bahasa;
 }) {
   const ref = useRef<HTMLVideoElement | null>(null);
   const [siap, setSiap] = useState(false);
@@ -45,8 +45,8 @@ export function VideoOtomatis({ url, poster, label, onBuka, tanpaMt = false, kre
 
   // Pastikan video berhenti saat unmount
   useEffect(() => {
+    const el = ref.current;
     return () => {
-      const el = ref.current;
       if (el) el.pause();
     };
   }, []);

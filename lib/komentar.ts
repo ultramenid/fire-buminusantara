@@ -1,14 +1,18 @@
 import { prisma } from "./prisma";
 import kataKasar from "./kata-kasar.json";
 
-// Turnstile dipakai bersama form laporan warga, jadi tinggal di modulnya
-// sendiri. Di-ekspor ulang di sini supaya route komentar tidak perlu ikut
-// berubah alamat impornya.
-export { turnstileSah } from "./turnstile";
-
 /** Model polimorfik dipakai bersama halaman lain di Pasopati; nilainya harus
  *  sama persis dengan yang ditulis Laravel. */
 const TIPE = "App\\Models\\Event";
+
+export const POLA_KASAR = new RegExp(
+  `\\b(?:${(kataKasar as string[])
+    .slice()
+    .sort((a, b) => b.length - a.length)
+    .map((k) => k.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+    .join("|")})\\b`,
+  "giu"
+);
 
 export type Komentar = {
   id: number;
@@ -22,18 +26,13 @@ export type Komentar = {
   balasan?: Komentar[];
 };
 
-/** Sensor kata kasar: tiga huruf pertama disisakan, sisanya bintang — sama
- *  dengan ProfanityFilter di Laravel, memakai daftar kata yang sama. */
+/** Sensor kata kasar: untuk kata <= 3 huruf sisakan 1 huruf (mis. t**);
+ *  untuk kata > 3 huruf sisakan 2 huruf (mis. ba**). */
 export function saring(teks: string): string {
-  let hasil = teks;
-  for (const kata of kataKasar as string[]) {
-    const pola = new RegExp(`\\b${kata.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "giu");
-    hasil = hasil.replace(pola, (cocok) => {
-      const simpan = Math.min(3, cocok.length);
-      return cocok.slice(0, simpan) + "*".repeat(cocok.length - simpan);
-    });
-  }
-  return hasil;
+  return teks.replace(POLA_KASAR, (cocok) => {
+    const simpan = cocok.length <= 3 ? 1 : 2;
+    return cocok.slice(0, simpan) + "*".repeat(Math.max(0, cocok.length - simpan));
+  });
 }
 
 const RELATIF = new Intl.RelativeTimeFormat("id", { numeric: "auto" });
@@ -146,7 +145,6 @@ export async function simpanKomentar(input: {
 
     return await tx.comments.create({
       data: {
-        page_id: null,
         commentable_type: TIPE,
         commentable_id: input.eventId,
         name: input.nama,

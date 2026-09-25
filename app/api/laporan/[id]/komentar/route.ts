@@ -1,4 +1,3 @@
-import { NextResponse } from "next/server";
 import { revalidateTag } from "next/cache";
 import { daftarKomentar, simpanKomentar } from "@/lib/komentar";
 import { ipDari, turnstileSah } from "@/lib/turnstile";
@@ -17,6 +16,28 @@ import { TAYANG } from "@/lib/events";
 
 const BATAS_ISI = 2000;
 const BATAS_NAMA = 100;
+const JEDA_KOMENTAR_MS = 3000;
+
+// Rate limiter in-memory untuk membatasi pengiriman komentar per alamat IP (cooldown 3 detik)
+const batasWaktuKomentar = new Map<string, number>();
+
+function batasiLajuKomentar(ip: string): boolean {
+  const sekarang = Date.now();
+  if (batasWaktuKomentar.size > 1000) {
+    for (const [kunciIp, waktu] of batasWaktuKomentar.entries()) {
+      if (sekarang - waktu > JEDA_KOMENTAR_MS) {
+        batasWaktuKomentar.delete(kunciIp);
+      }
+    }
+  }
+
+  const waktuTerakhir = batasWaktuKomentar.get(ip);
+  if (waktuTerakhir && sekarang - waktuTerakhir < JEDA_KOMENTAR_MS) {
+    return false;
+  }
+  batasWaktuKomentar.set(ip, sekarang);
+  return true;
+}
 
 async function eventAda(id: number) {
   // Kejadian draft belum tayang — tidak boleh menerima komentar publik.
@@ -26,36 +47,36 @@ async function eventAda(id: number) {
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const id = Number((await params).id);
   if (!Number.isInteger(id) || id <= 0) {
-    return NextResponse.json({ message: "Laporan tidak ditemukan." }, { status: 404 });
+    return Response.json({ message: "Laporan tidak ditemukan." }, { status: 404 });
   }
   if (!(await eventAda(id))) {
-    return NextResponse.json({ message: "Laporan tidak ditemukan." }, { status: 404 });
+    return Response.json({ message: "Laporan tidak ditemukan." }, { status: 404 });
   }
-  return NextResponse.json({ komentar: await daftarKomentar(id) });
+  return Response.json({ komentar: await daftarKomentar(id) });
 }
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const id = Number((await params).id);
   if (!Number.isInteger(id) || id <= 0 || !(await eventAda(id))) {
-    return NextResponse.json({ message: "Laporan tidak ditemukan." }, { status: 404 });
+    return Response.json({ message: "Laporan tidak ditemukan." }, { status: 404 });
   }
 
   const body = await req.json().catch(() => null);
   if (!body) {
-    return NextResponse.json({ message: "Permintaan tidak terbaca." }, { status: 400 });
+    return Response.json({ message: "Permintaan tidak terbaca." }, { status: 400 });
   }
 
   const ip = ipDari(req);
 
   if (!(await turnstileSah(body.captcha ?? null, ip))) {
-    return NextResponse.json({ message: "Verifikasi captcha gagal. Coba lagi." }, { status: 422 });
+    return Response.json({ message: "Verifikasi captcha gagal. Coba lagi." }, { status: 422 });
   }
 
   // `website` adalah umpan jebakan yang disembunyikan di form; hanya bot yang
   // mengisinya. Ditolak DIAM-DIAM dengan jawaban sukses, bukan dengan galat,
   // supaya tidak memberi petunjuk bahwa jebakannya terdeteksi.
   if (String(body.website ?? "").trim() !== "") {
-    return NextResponse.json({ komentar: await daftarKomentar(id) }, { status: 201 });
+    return Response.json({ komentar: await daftarKomentar(id) }, { status: 201 });
   }
 
   const nama = String(body.nama ?? "").trim();
@@ -79,7 +100,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   else if (isi.length > BATAS_ISI) galat.isi = `Komentar maksimal ${BATAS_ISI} karakter.`;
 
   if (Object.keys(galat).length) {
-    return NextResponse.json(
+    return Response.json(
       { message: Object.values(galat)[0], errors: galat },
       { status: 422 },
     );
@@ -90,30 +111,21 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     : null;
 
   // Batasi spam / request konkuren agresif dari IP yang sama (cooldown 3 detik)
-  if (ip) {
-    const komentarTerakhir = await prisma.comments.findFirst({
-      where: {
-        ip_address: ip,
-        created_at: { gte: new Date(Date.now() - 3000) },
-      },
-      select: { id: true },
-    });
-    if (komentarTerakhir) {
-      return NextResponse.json(
-        { message: "Mohon tunggu beberapa detik sebelum mengirim komentar lagi." },
-        { status: 429 },
-      );
-    }
+  if (ip && !batasiLajuKomentar(ip)) {
+    return Response.json(
+      { message: "Mohon tunggu beberapa detik sebelum mengirim komentar lagi." },
+      { status: 429 },
+    );
   }
 
   try {
     await simpanKomentar({ eventId: id, nama: namaSimpan, email: emailSimpan, isi, balasKe, ip });
   } catch (err: unknown) {
     const pesan = err instanceof Error ? err.message : "Gagal menyimpan komentar.";
-    return NextResponse.json({ message: pesan }, { status: 422 });
+    return Response.json({ message: pesan }, { status: 500 });
   }
 
   // Komentar publik langsung tersetujui — segarkan jumlah komentar di umpan (ambilUmpan).
   revalidateTag("komentar", "max");
-  return NextResponse.json({ komentar: await daftarKomentar(id) }, { status: 201 });
+  return Response.json({ komentar: await daftarKomentar(id) }, { status: 201 });
 }

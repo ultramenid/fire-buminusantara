@@ -1,12 +1,10 @@
-import { redirect } from "next/navigation";
-import { bacaSesi, bolehKelola } from "@/lib/sesi";
+import { wajibSesi } from "@/lib/sesi";
 import { ambilSorotan } from "@/lib/statistik-sorotan";
 import { HALAMAN, KopHalaman } from "../kop-halaman";
 import { FormSorotan } from "./form-sorotan";
 
 export default async function Statistik() {
-  const sesi = await bacaSesi();
-  if (!sesi || !bolehKelola(sesi.peran)) redirect("/admin/login");
+  await wajibSesi();
 
   const awal = await ambilSorotan();
 

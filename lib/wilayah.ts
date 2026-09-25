@@ -85,3 +85,22 @@ const LOKAL_MENURUT_RINGKAS = new Map(
 export function namaProvinsiLokal(nama: string): string {
   return LOKAL_MENURUT_RINGKAS.get(ringkasNamaProvinsi(nama)) ?? nama;
 }
+
+/** Tab pulau pada pop-up berita. `isi` adalah nilai `pulau` pada payload
+ *  berita yang ikut tab itu — Bali & Nusa Tenggara dibaca bersama Jawa,
+ *  sesuai pengelompokan desain. */
+export const PULAU_TAB = [
+  { kunci: "Sumatra", label: "Sumatera", isi: ["Sumatra"] },
+  { kunci: "Jawa", label: "Jawa, Bali, & Nusa Tenggara", isi: ["Jawa", "Bali-Nusa"] },
+  { kunci: "Kalimantan", label: "Kalimantan", isi: ["Kalimantan"] },
+  { kunci: "Sulawesi", label: "Sulawesi", isi: ["Sulawesi"] },
+  { kunci: "Maluku", label: "Maluku", isi: ["Maluku"] },
+  { kunci: "Papua", label: "Papua", isi: ["Papua"] },
+] as const;
+
+/** Tab mana yang sebaiknya terbuka untuk sebuah pulau. */
+export function tabDariPulau(pulau: string | null): string | null {
+  if (!pulau) return null;
+  return PULAU_TAB.find((t) => (t.isi as readonly string[]).includes(pulau))?.kunci ?? null;
+}
+

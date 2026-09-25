@@ -1,44 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import petaProvinsi from "@/public/data/peta-provinsi.json";
 import { inferPulau } from "@/lib/wilayah";
-
-// Centroid daratan terbesar dan kotak batas untuk tiap provinsi (dihitung dari lib/geometri.ts tempatAngka)
-const PUSAT_WILAYAH: Record<string, { titik: [number, number]; kotak: [number, number, number, number] }> = {
-  "Aceh": { titik: [96.9394, 4.2832], kotak: [95.1951, 2.146, 98.2863, 5.6572] },
-  "Bali": { titik: [115.1178, -8.3541], kotak: [114.438, -8.8474, 115.7163, -8.0589] },
-  "Banten": { titik: [106.12, -6.4553], kotak: [105.2182, -6.9952, 106.7759, -5.8854] },
-  "Bengkulu": { titik: [102.3655, -3.5383], kotak: [101.0278, -4.9224, 103.7773, -2.2802] },
-  "DI Yogyakarta": { titik: [110.444, -7.8914], kotak: [110.0118, -8.2029, 110.8361, -7.5366] },
-  "DKI Jakarta": { titik: [106.8355, -6.2047], kotak: [106.6888, -6.3669, 106.9729, -6.0893] },
-  "Gorontalo": { titik: [122.3771, 0.6909], kotak: [121.1686, 0.3259, 123.5272, 1.0453] },
-  "Jambi": { titik: [102.7271, -1.697], kotak: [101.1258, -2.7667, 104.5152, -0.7552] },
-  "Jawa Barat": { titik: [107.6047, -6.9212], kotak: [106.3709, -7.8227, 108.8293, -5.9114] },
-  "Jawa Tengah": { titik: [110.2095, -7.2609], kotak: [108.5564, -8.2104, 111.6946, -6.4066] },
-  "Jawa Timur": { titik: [112.6168, -7.8178], kotak: [110.9045, -8.7807, 114.5913, -6.7529] },
-  "Kalimantan Barat": { titik: [111.158, -0.0686], kotak: [108.8406, -3.0395, 114.2205, 2.065] },
-  "Kalimantan Selatan": { titik: [115.3871, -2.9714], kotak: [114.3471, -4.1719, 116.5589, -1.315] },
-  "Kalimantan Tengah": { titik: [113.4235, -1.6051], kotak: [110.7345, -3.539, 115.847, 0.7775] },
-  "Kalimantan Timur": { titik: [116.4594, 0.4699], kotak: [113.8417, -2.4052, 118.989, 2.6263] },
-  "Kalimantan Utara": { titik: [116.1563, 2.867], kotak: [114.5896, 1.0619, 117.9859, 4.4082] },
-  "Kepulauan Bangka Belitung": { titik: [105.9854, -2.2515], kotak: [105.1067, -3.1122, 106.7983, -1.5187] },
-  "Kepulauan Riau": { titik: [108.2051, 3.9144], kotak: [107.9619, 3.6306, 108.4101, 4.2304] },
-  "Lampung": { titik: [105.0218, -4.9145], kotak: [103.5982, -5.9373, 105.9129, -3.7291] },
-  "Maluku": { titik: [129.4589, -3.1992], kotak: [127.866, -3.8767, 130.8796, -2.779] },
-  "Maluku Utara": { titik: [128.0103, 0.8698], kotak: [127.3987, -0.8872, 128.8473, 2.2041] },
-  "Nusa Tenggara Barat": { titik: [117.755, -8.6772], kotak: [116.7278, -9.1128, 119.1626, -8.0802] },
-  "Nusa Tenggara Timur": { titik: [121.1522, -8.6045], kotak: [119.7994, -8.9596, 123.0215, -8.0651] },
-  "Papua": { titik: [138.7266, -4.5461], kotak: [134.2052, -9.1183, 141.0118, -1.4586] },
-  "Papua Barat": { titik: [133.1416, -2.0976], kotak: [130.9314, -4.2528, 135.2577, -0.3433] },
-  "Riau": { titik: [101.7596, 0.4464], kotak: [100.0537, -1.1211, 103.8117, 2.5295] },
-  "Sulawesi Barat": { titik: [119.3396, -2.4596], kotak: [118.7567, -3.5703, 119.9092, -0.8609] },
-  "Sulawesi Selatan": { titik: [120.1575, -3.6273], kotak: [119.3539, -5.702, 121.8006, -1.8845] },
-  "Sulawesi Tengah": { titik: [121.3787, -1.1778], kotak: [119.431, -3.2711, 123.4521, 1.3485] },
-  "Sulawesi Tenggara": { titik: [121.8307, -3.7935], kotak: [120.8588, -4.8947, 122.9044, -2.7102] },
-  "Sulawesi Utara": { titik: [124.2694, 0.8843], kotak: [123.1173, 0.3126, 125.2425, 1.7548] },
-  "Sumatera Barat": { titik: [100.6486, -0.7005], kotak: [99.162, -2.4822, 101.8785, 0.9057] },
-  "Sumatera Selatan": { titik: [104.1746, -3.2086], kotak: [102.0668, -4.9228, 106.0786, -1.628] },
-  "Sumatera Utara": { titik: [99.1596, 2.3049], kotak: [97.8032, 0.2318, 100.4553, 4.291] },
-};
+import { PUSAT_WILAYAH } from "@/lib/pusat-wilayah";
 
 // Pemetaan nama provinsi ke pulau
 const PROVINSI_PULAU: Record<string, string> = {};

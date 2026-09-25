@@ -33,18 +33,13 @@ export function gunakanKomentar(idLaporan: number) {
   const [isi, setIsi] = useState("");
   const [balasKe, setBalasKe] = useState<number | null>(null);
   const [balasNama, setBalasNama] = useState("");
+  const [dibuka, setDibuka] = useState<number[]>([]);
+  const [website, setWebsite] = useState("");
+  const [galat, setGalat] = useState("");
 
   /**
    * Identitas pengisi komentar dipulihkan SESUDAH hidrasi, bukan di dalam
    * inisialisasi useState.
-   *
-   * Inisialisasi lazy useState ikut berjalan pada render hidrasi di klien, jadi
-   * membaca localStorage di sana membuat klien merender nama tersimpan
-   * sementara server merender kosong — dan React membuang seluruh pohon itu
-   * dengan "Hydration failed because the server rendered text didn't match"
-   * (inisial "F" lawan "?" di kolom komentar). Menaruhnya di useEffect membuat
-   * render pertama identik dengan server, lalu nilainya terisi sepersekian
-   * detik kemudian.
    */
   useEffect(() => {
     try {
@@ -56,32 +51,14 @@ export function gunakanKomentar(idLaporan: number) {
       // localStorage bisa ditolak (mode privat, kuki diblokir) — biarkan kosong.
     }
   }, []);
-  const [dibuka, setDibuka] = useState<number[]>([]);
-  const [website, setWebsite] = useState("");
-  const [galat, setGalat] = useState("");
-
-  const [prevId, setPrevId] = useState(idLaporan);
-  if (idLaporan !== prevId) {
-    setPrevId(idLaporan);
-    setMemuat(true);
-    setGalat("");
-    setBalasKe(null);
-    setBalasNama("");
-    setDibuka([]);
-    setDaftar([]);
-  }
 
   const ketikRef = useRef<HTMLTextAreaElement | null>(null);
   const wadahRef = useRef<HTMLDivElement | null>(null);
   const widgetRef = useRef<number | null>(null);
   const sedangKirimRef = useRef(false);
-  // Kiriman yang sedang menunggu token dari execute(); dibangunkan callback widget.
-  const penungguToken = useRef<((token: string) => void)[]>([]);
+  const tokenResolverRef = useRef<((token: string) => void) | null>(null);
   const currentIdRef = useRef(idLaporan);
-
-  useEffect(() => {
-    currentIdRef.current = idLaporan;
-  }, [idLaporan]);
+  currentIdRef.current = idLaporan;
 
   // Bersihkan widget Turnstile saat hook unmount (pop-up ditutup)
   useEffect(() => {
@@ -103,9 +80,15 @@ export function gunakanKomentar(idLaporan: number) {
     setBalasNama("");
   }, []);
 
-  // Ambil komentar laporan ini
+  // Ambil komentar laporan ini & setel ulang keadaan saat idLaporan berubah
   useEffect(() => {
     let batal = false;
+    setMemuat(true);
+    setGalat("");
+    setBalasKe(null);
+    setBalasNama("");
+    setDibuka([]);
+    setDaftar([]);
 
     fetch(alamat, { headers: { Accept: "application/json" } })
       .then((r) => (r.ok ? r.json() : Promise.reject(r)))
@@ -137,10 +120,7 @@ export function gunakanKomentar(idLaporan: number) {
     }
   }, [idLaporan]);
 
-  /** Buang widget yang sedang menempel, apa pun keadaannya. `remove` pada id
-   *  yang sudah mati itulah yang membuat Turnstile mengeluh di konsol
-   *  ("Cannot find Widget …", "Nothing to remove found…"), jadi id-nya selalu
-   *  dinolkan di sini — sekali lepas, ia tak boleh dipakai lagi. */
+  /** Buang widget yang sedang menempel, apa pun keadaannya. */
   const lepasWidget = useCallback(() => {
     const ts = turnstile();
     if (ts && widgetRef.current !== null) {
@@ -153,18 +133,6 @@ export function gunakanKomentar(idLaporan: number) {
     widgetRef.current = null;
   }, []);
 
-  /* Wadah captcha adalah CALLBACK REF, bukan useRef.
-
-     Widget Turnstile hidup menempel pada satu simpul DOM, jadi siklus hidupnya
-     harus mengikuti simpul itu: dipasang saat simpulnya lahir, dibuang saat
-     simpulnya lepas. Dengan useRef biasa pemiliknya tak pernah tahu kapan
-     wadahnya berganti — desktop dan sheet ponsel memakai dua <div> berbeda
-     untuk satu ref yang sama, dan formulir komentar juga di-mount ulang tiap
-     pop-up rincian dibuka. Widget lama pun tertinggal di DOM yang sudah
-     dibuang, dan setiap reset/remove berikutnya menembak id mati.
-
-     Mode explicit dengan appearance "interaction-only": kotak captcha tidak
-     tampil sama sekali; token tetap dikirim & diperiksa di server. */
   const captchaRef = useCallback(
     (wadah: HTMLDivElement | null) => {
       wadahRef.current = wadah;
@@ -172,8 +140,6 @@ export function gunakanKomentar(idLaporan: number) {
       if (!wadah || !SITE_KEY) return;
 
       const pasang = () => {
-        // Skrip Turnstile bisa belum termuat, dan dalam penantian itu wadahnya
-        // bisa sudah dilepas React — jangan menempel ke simpul yang hilang.
         if (wadahRef.current !== wadah) return;
         const ts = turnstile();
         if (!ts) {
@@ -183,33 +149,31 @@ export function gunakanKomentar(idLaporan: number) {
         widgetRef.current = ts.render(wadah, {
           sitekey: SITE_KEY,
           appearance: "interaction-only",
-          // Tantangan BARU dijalankan saat kirim (lihat ambilToken), bukan saat
-          // formulir dibuka: token Turnstile berumur 5 menit, dan formulir yang
-          // dibuka lalu didiamkan selalu mengirim token yang sudah basi.
           execution: "execute",
           callback: (token: string) => {
-            penungguToken.current.splice(0).forEach((bangun) => bangun(token));
+            if (tokenResolverRef.current) {
+              tokenResolverRef.current(token);
+              tokenResolverRef.current = null;
+            }
           },
           "expired-callback": () => {
             const t = turnstile();
             if (t && widgetRef.current !== null) {
               try {
                 t.reset(widgetRef.current);
-              } catch {
-                /* widget sudah lepas */
-              }
+              } catch {}
             }
           },
           "error-callback": () => {
-            // Jangan gantungkan kiriman yang menunggu: token kosong = gagal.
-            penungguToken.current.splice(0).forEach((bangun) => bangun(""));
+            if (tokenResolverRef.current) {
+              tokenResolverRef.current("");
+              tokenResolverRef.current = null;
+            }
             const t = turnstile();
             if (t && widgetRef.current !== null) {
               try {
                 t.reset(widgetRef.current);
-              } catch {
-                /* widget sudah lepas */
-              }
+              } catch {}
             }
           },
         });
@@ -220,58 +184,47 @@ export function gunakanKomentar(idLaporan: number) {
     [lepasWidget],
   );
 
-  // Token Turnstile sekali pakai: setelah dikirim — berhasil atau gagal —
-  // widget harus meminta token baru.
   const ulangCaptcha = useCallback(() => {
     const ts = turnstile();
     if (ts && widgetRef.current !== null) {
       try {
         ts.reset(widgetRef.current);
-      } catch {
-        /* widget sudah lepas bersama pop-up yang ditutup */
-      }
+      } catch {}
     }
   }, []);
 
-  /** Jalankan tantangan Turnstile SEKARANG dan tunggu tokennya.
-   *
-   *  Dulu token diminta saat formulir dibuka dan kiriman ditolak kalau ia belum
-   *  tiba ("Verifikasi keamanan belum siap") — padahal yang kurang cuma waktu.
-   *  Sekarang tantangan baru berjalan di detik kirim; token kosong berarti
-   *  benar-benar gagal, bukan sekadar belum sempat. */
+  /** Jalankan tantangan Turnstile dan tunggu tokennya. */
   const ambilToken = useCallback(async (): Promise<string> => {
     if (!SITE_KEY) return "";
-    // Skrip Turnstile bisa masih dimuat saat tombol ditekan; wadahnya memasang
-    // widget lewat polling 100ms, jadi tunggu sebentar alih-alih menolak.
     for (let i = 0; widgetRef.current === null && i < 50; i++) {
       await new Promise((lanjut) => window.setTimeout(lanjut, 100));
     }
     const ts = turnstile();
     const wadah = wadahRef.current;
-    // execute() menerima WADAH-nya, bukan id widget (lihat dokumentasi
-    // client-side rendering Turnstile).
     if (!ts || !wadah || widgetRef.current === null) return "";
 
     return new Promise<string>((selesai) => {
-      const bangun = (token: string) => {
-        window.clearTimeout(jam);
-        selesai(token);
-      };
+      tokenResolverRef.current = selesai;
       const jam = window.setTimeout(() => {
-        penungguToken.current = penungguToken.current.filter((f) => f !== bangun);
-        selesai("");
-      }, 20_000);
-      penungguToken.current.push(bangun);
+        if (tokenResolverRef.current === selesai) {
+          tokenResolverRef.current = null;
+          selesai("");
+        }
+      }, 10_000);
+
       try {
         ts.execute(wadah);
       } catch {
-        bangun("");
+        window.clearTimeout(jam);
+        if (tokenResolverRef.current === selesai) {
+          tokenResolverRef.current = null;
+          selesai("");
+        }
       }
     });
   }, []);
 
-  // Saat mulai membalas, fokus dipindah ke kolom ketik yang ada di ujung lain
-  // rel, supaya tidak perlu dicari sendiri.
+  // Saat mulai membalas, fokus dipindah ke kolom ketik
   useEffect(() => {
     if (balasKe === null) return;
     const kolom = ketikRef.current;
@@ -280,8 +233,7 @@ export function gunakanKomentar(idLaporan: number) {
     kolom.setSelectionRange(kolom.value.length, kolom.value.length);
   }, [balasKe]);
 
-  // Akar dari sebuah komentar: id itu sendiri bila ia akar, atau id akar yang
-  // menaunginya bila ia balasan.
+  // Akar dari sebuah komentar
   const akarDari = useCallback(
     (id: number | null): number | null => {
       if (!id) return null;
@@ -308,14 +260,11 @@ export function gunakanKomentar(idLaporan: number) {
     setBalasNama(k.nama);
   }, []);
 
-  // Sebutan diambil dari data (`sebutan`), bukan dari teks yang diketik.
   const sebutanDari = useCallback(
     (k: Komentar) => (k.sebutan ? `@${k.sebutan}` : null),
     [],
   );
 
-  // Kalau teksnya sendiri sudah diawali sebutan yang sama, awalan itu dipangkas
-  // supaya tidak tampil dua kali.
   const isiTanpaSebutan = useCallback((k: Komentar) => {
     const awalan = k.sebutan ? `@${k.sebutan}` : null;
     if (!awalan || !k.isi.startsWith(awalan)) return k.isi;
@@ -323,28 +272,20 @@ export function gunakanKomentar(idLaporan: number) {
   }, []);
 
   const kirim = useCallback(async () => {
-    if (sedangKirimRef.current || mengirim || !isi.trim()) return;
+    if (sedangKirimRef.current || !isi.trim()) return;
     sedangKirimRef.current = true;
     setMengirim(true);
     setGalat("");
 
-    const captchaToken = await ambilToken();
-    if (SITE_KEY && !captchaToken) {
-      sedangKirimRef.current = false;
-      setMengirim(false);
-      ulangCaptcha();
-      setGalat("Verifikasi keamanan gagal. Coba kirim lagi.");
-      return;
-    }
-
     const targetId = idLaporan;
-    let respon: {
-      komentar?: Komentar[];
-      message?: string;
-      errors?: Record<string, string>;
-    } | null = null;
 
     try {
+      const captchaToken = await ambilToken();
+      if (SITE_KEY && !captchaToken) {
+        setGalat("Verifikasi keamanan gagal. Coba kirim lagi.");
+        return;
+      }
+
       const r = await fetch(alamat, {
         method: "POST",
         headers: { "Content-Type": "application/json", Accept: "application/json" },
@@ -358,53 +299,46 @@ export function gunakanKomentar(idLaporan: number) {
           captcha: captchaToken,
         }),
       });
-      respon = (await r.json().catch(() => null)) ?? null;
-      if (!r.ok) throw respon;
-    } catch (gagal) {
+
+      const respon = (await r.json().catch(() => null)) as {
+        komentar?: Komentar[];
+        message?: string;
+        errors?: Record<string, string>;
+      } | null;
+
+      if (!r.ok) {
+        const pesan = (respon?.errors && Object.values(respon.errors)[0]) ?? respon?.message;
+        setGalat(pesan ?? "Komentar gagal dikirim. Coba lagi.");
+        return;
+      }
+
+      // Cegah kontaminasi komentar jika pengguna berpindah laporan sebelum respons tiba
+      if (currentIdRef.current !== targetId) return;
+
+      const akar = akarDari(balasKe);
+      setDaftar(respon?.komentar ?? []);
+      setIsi("");
+      batalBalas();
+      if (akar !== null) {
+        setDibuka((d) => (d.includes(akar) ? d : [...d, akar]));
+      }
+
+      try {
+        if (!anonim) {
+          localStorage.setItem("komentar_nama", nama);
+          localStorage.setItem("komentar_email", email);
+        }
+      } catch {}
+    } catch {
+      setGalat("Komentar gagal dikirim. Coba lagi.");
+    } finally {
       sedangKirimRef.current = false;
       setMengirim(false);
       ulangCaptcha();
-      // Pesan validasi dulu, lalu `message`, baru pesan umum — sama seperti
-      // versi Alpine memilih dari data.errors → data.message.
-      const data = (gagal as
-        | { message?: string; errors?: Record<string, string> }
-        | null) ?? respon;
-      let pesan: string | null = null;
-      if (data && data.errors) pesan = Object.values(data.errors)[0];
-      else if (data && data.message) pesan = data.message;
-      setGalat(pesan ?? "Komentar gagal dikirim. Coba lagi.");
-      return;
-    }
-
-    sedangKirimRef.current = false;
-    setMengirim(false);
-    ulangCaptcha();
-
-    // Cegah kontaminasi komentar jika pengguna berpindah laporan sebelum respons tiba
-    if (currentIdRef.current !== targetId) return;
-
-    // Balasan baru dibuka otomatis — kalau tidak, kirimannya sendiri tidak
-    // kelihatan karena utasnya masih tertutup.
-    const akar = akarDari(balasKe);
-    setDaftar(respon?.komentar ?? []);
-    setIsi("");
-    batalBalas();
-    if (akar !== null) {
-      setDibuka((d) => (d.includes(akar) ? d : [...d, akar]));
-    }
-    try {
-      // Identitas anonim tidak pernah disimpan — pilihan anonim memang untuk
-      // tidak meninggalkan jejak nama di perangkat ini.
-      if (!anonim) {
-        localStorage.setItem("komentar_nama", nama);
-        localStorage.setItem("komentar_email", email);
-      }
-    } catch {
-      /* storage mungkin diblokir */
     }
   }, [
     alamat, akarDari, ambilToken, anonim, batalBalas, balasKe,
-    email, idLaporan, isi, mengirim, nama, ulangCaptcha, website,
+    email, idLaporan, isi, nama, ulangCaptcha, website,
   ]);
 
   return {

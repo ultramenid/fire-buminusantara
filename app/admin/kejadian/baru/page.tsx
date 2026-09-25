@@ -1,35 +1,17 @@
 import Link from "next/link";
-import { redirect } from "next/navigation";
-import { bacaSesi, bolehKelola } from "@/lib/sesi";
-import { updateTag } from "next/cache";
-import { simpanKejadian } from "@/lib/simpan-kejadian";
+import { wajibSesi } from "@/lib/sesi";
 import { HALAMAN, KopHalaman } from "../../kop-halaman";
 import { FormKejadian } from "../form";
+import { aksiTambahKejadian } from "../aksi";
 
 export default async function Tambah({
   searchParams,
 }: {
   searchParams: Promise<{ galat?: string }>;
 }) {
-  const sesi = await bacaSesi();
-  if (!sesi || !bolehKelola(sesi.peran)) redirect("/admin/login");
+  await wajibSesi();
 
   const { galat } = await searchParams;
-
-  async function kirim(data: FormData) {
-    "use server";
-    const s = await bacaSesi();
-    if (!s || !bolehKelola(s.peran)) redirect("/admin/login");
-
-    const hasil = await simpanKejadian(data);
-    if (!hasil.ok) redirect(`/admin/kejadian/baru?galat=${encodeURIComponent(hasil.galat)}`);
-    // Metadata slug di halaman publik di-cache; tanpa ini pratinjau bagikan
-    // kejadian baru bisa basi sampai cache-nya kedaluwarsa sendiri.
-    try {
-      updateTag("kejadian");
-    } catch {}
-    redirect("/admin/kejadian");
-  }
 
   return (
     <div className={HALAMAN}>
@@ -50,7 +32,7 @@ export default async function Tambah({
         </p>
       )}
 
-      <FormKejadian sedangUbah={false} aksi={kirim}
+      <FormKejadian sedangUbah={false} aksi={aksiTambahKejadian}
         awal={{
           title_id: "", title_en: "", slug: "",
           description_id: "", description_en: "",

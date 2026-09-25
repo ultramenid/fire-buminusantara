@@ -5,7 +5,7 @@
 // berisi FOTO ber-EXIF GPS + VIDEO ber-GPS ISO6709 sekaligus, untuk menguji
 // tampilan galeri dua jenis media dan poster video di halaman publik & CMS.
 //
-// Berkasnya dibuat di sini (sharp + piexifjs untuk foto, susunan box MP4 untuk
+// Berkasnya dibuat di sini (sharp untuk foto, susunan box MP4 untuk
 // video), ditulis ke `media/` lokal, lalu direferensikan dari `events.image_id`,
 // `events.video`, dan `events.media`.
 //
@@ -16,7 +16,6 @@
 //
 import "dotenv/config";
 import sharp from "sharp";
-import piexif from "piexifjs";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
@@ -40,8 +39,6 @@ const prisma = new PrismaClient({
 const AKAR = path.join(process.cwd(), "media");
 const AWALAN = "fire/";
 
-const R = (n, d) => [Math.round(n * d), d];
-
 /** Foto JPEG ~720×540 gradien lembut + tag GPS EXIF + waktu pengambilan. */
 async function fotoBerGps({ latDms, lngDms, latRef, lngRef, tanggal }) {
   const gambar = await sharp({
@@ -63,42 +60,36 @@ async function fotoBerGps({ latDms, lngDms, latRef, lngRef, tanggal }) {
         left: 0,
       },
     ])
+    .withMetadata({
+      exif: {
+        IFD0: { Make: "Simontini", Model: "FireCam S1" },
+        IFD2: { DateTimeOriginal: tanggal, CreateDate: tanggal },
+        IFD3: {
+          GPSLatitudeRef: latRef,
+          GPSLatitude: `${latDms[0]}/1 ${latDms[1]}/1 ${Math.round(latDms[2] * 1000)}/1000`,
+          GPSLongitudeRef: lngRef,
+          GPSLongitude: `${lngDms[0]}/1 ${lngDms[1]}/1 ${Math.round(lngDms[2] * 1000)}/1000`,
+        },
+      },
+    })
     .jpeg()
     .toBuffer();
 
-  const exif = piexif.dump({
-    "0th": { [piexif.ImageIFD.Make]: "Simontini", [piexif.ImageIFD.Model]: "FireCam S1" },
-    Exif: {
-      // 0x9003 DateTimeOriginal, 0x9004 (CreateDate di exifr) = DateTimeDigitized di piexif.
-      [piexif.ExifIFD.DateTimeOriginal]: tanggal,
-      [piexif.ExifIFD.DateTimeDigitized]: tanggal,
-    },
-    GPS: {
-      [piexif.GPSIFD.GPSVersionID]: [2, 3, 0, 0],
-      [piexif.GPSIFD.GPSLatitudeRef]: latRef,
-      [piexif.GPSIFD.GPSLatitude]: [R(latDms[0], 1), R(latDms[1], 1), R(latDms[2], 1000)],
-      [piexif.GPSIFD.GPSLongitudeRef]: lngRef,
-      [piexif.GPSIFD.GPSLongitude]: [R(lngDms[0], 1), R(lngDms[1], 1), R(lngDms[2], 1000)],
-    },
-    Interop: {},
-    "1st": {},
-  });
-  return Buffer.from(piexif.insert(exif, gambar.toString("binary")), "binary");
+  return gambar;
 }
 
 /** Foto JPEG polos tanpa metadata GPS (hanya label pembuat). */
 async function fotoTanpaGps() {
-  const gambar = await sharp({
+  return sharp({
     create: { width: 720, height: 540, channels: 3, background: { r: 60, g: 90, b: 120 } },
-  }).jpeg().toBuffer();
-  const exif = piexif.dump({
-    "0th": { [piexif.ImageIFD.Make]: "Simontini" },
-    Exif: {},
-    GPS: {},
-    Interop: {},
-    "1st": {},
-  });
-  return Buffer.from(piexif.insert(exif, gambar.toString("binary")), "binary");
+  })
+    .withMetadata({
+      exif: {
+        IFD0: { Make: "Simontini" },
+      },
+    })
+    .jpeg()
+    .toBuffer();
 }
 
 /** Satu box MP4: `[u32 size][4cc type][payload]`. */

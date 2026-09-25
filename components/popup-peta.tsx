@@ -3,8 +3,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import { gunakanTumbuh, type TitikAsal } from "@/hooks/gunakan-tumbuh";
-import { PULAU_TAB, tabDariPulau, waktuIso, waktuTeks } from "@/lib/tanggal";
-import { PROVINSI_KE_PULAU } from "@/lib/wilayah";
+import { waktuIso, waktuTeks } from "@/lib/tanggal";
+import { PROVINSI_KE_PULAU, PULAU_TAB, tabDariPulau } from "@/lib/wilayah";
 import { BilahSaringan, SaklarTampilan, type ModeTampilan } from "@/components/bilah-saringan";
 import { useTheme } from "next-themes";
 import { useMounted } from "@/hooks/use-mounted";

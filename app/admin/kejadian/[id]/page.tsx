@@ -1,13 +1,12 @@
 import Link from "next/link";
-import { notFound, redirect } from "next/navigation";
+import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { galeriTersimpan } from "@/lib/media";
-import { bacaSesi, bolehKelola } from "@/lib/sesi";
-import { updateTag } from "next/cache";
-import { simpanKejadian } from "@/lib/simpan-kejadian";
+import { wajibSesi } from "@/lib/sesi";
 import { HALAMAN, KopHalaman } from "../../kop-halaman";
 import { FormKejadian } from "../form";
 import { TombolHapus } from "./tombol-hapus";
+import { aksiUbahKejadian, aksiHapusKejadian } from "../aksi";
 
 const tanggalId = new Intl.DateTimeFormat("id-ID", { day: "2-digit", month: "short", year: "numeric" });
 
@@ -17,8 +16,7 @@ export default async function Ubah({
   params: Promise<{ id: string }>;
   searchParams: Promise<{ galat?: string }>;
 }) {
-  const sesi = await bacaSesi();
-  if (!sesi || !bolehKelola(sesi.peran)) redirect("/admin/login");
+  const sesi = await wajibSesi();
 
   const id = Number((await params).id);
   if (!Number.isInteger(id)) notFound();
@@ -27,31 +25,6 @@ export default async function Ubah({
   if (!e) notFound();
 
   const { galat } = await searchParams;
-
-  async function kirim(data: FormData) {
-    "use server";
-    const s = await bacaSesi();
-    if (!s || !bolehKelola(s.peran)) redirect("/admin/login");
-
-    const hasil = await simpanKejadian(data, id);
-    if (!hasil.ok) redirect(`/admin/kejadian/${id}?galat=${encodeURIComponent(hasil.galat)}`);
-    try {
-      updateTag("kejadian");
-    } catch {}
-    redirect("/admin/kejadian");
-  }
-
-  async function hapus() {
-    "use server";
-    const s = await bacaSesi();
-    // Menghapus hanya untuk admin — editor boleh menulis, tidak membuang.
-    if (!s || s.peran !== "admin") redirect("/admin/kejadian");
-    await prisma.events.delete({ where: { id } });
-    try {
-      updateTag("kejadian");
-    } catch {}
-    redirect("/admin/kejadian");
-  }
 
   return (
     <div className={HALAMAN}>
@@ -72,7 +45,7 @@ export default async function Ubah({
         </p>
       )}
 
-      <FormKejadian sedangUbah aksi={kirim}
+      <FormKejadian sedangUbah aksi={aksiUbahKejadian.bind(null, id)}
         awal={{
           id, title_id: e.title_id, title_en: e.title_en, slug: e.slug ?? "",
           description_id: e.description_id ?? "", description_en: e.description_en ?? "",
@@ -85,7 +58,7 @@ export default async function Ubah({
         }} />
 
       {sesi.peran === "admin" && (
-        <form action={hapus} className="mt-10 rounded-[3px] border border-[var(--garis-tegas)]
+        <form action={aksiHapusKejadian.bind(null, id)} className="mt-10 rounded-[3px] border border-[var(--garis-tegas)]
                                         border-l-[3px] border-l-[var(--api)] bg-[var(--papan)] p-4">
           <p className="cms-mata text-[var(--bara)]">Hapus permanen</p>
           <p className="mt-2 mb-4 max-w-[62ch] text-[13px] leading-[1.55] text-[var(--redup)]">

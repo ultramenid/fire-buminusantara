@@ -1,6 +1,5 @@
 import Link from "next/link";
-import { redirect } from "next/navigation";
-import { bacaSesi, bolehKelola } from "@/lib/sesi";
+import { wajibSesi } from "@/lib/sesi";
 import { daftarReaksi, reaksiPerKejadian } from "@/lib/reaksi-komentar";
 import { HALAMAN, KopHalaman } from "../../kop-halaman";
 import { Paginasi } from "../../paginasi";
@@ -16,8 +15,7 @@ export default async function Reaksi({
 }: {
   searchParams: Promise<{ halaman?: string; page?: string }>;
 }) {
-  const sesi = await bacaSesi();
-  if (!sesi || !bolehKelola(sesi.peran)) redirect("/admin/login");
+  await wajibSesi();
 
   const params = await searchParams;
   const halaman = Math.max(1, parseInt(params.halaman ?? params.page ?? "1", 10) || 1);

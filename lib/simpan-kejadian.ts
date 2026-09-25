@@ -176,7 +176,7 @@ export async function simpanKejadian(data: FormData, id?: number, mediaAwal?: Be
         idTersimpan = Number(ubah.id);
       } else {
         const baru = await prisma.events.create({
-          data: { ...isi, image_en: null, created_at: new Date() },
+          data: { ...isi, created_at: new Date() },
           select: { id: true },
         });
         idTersimpan = Number(baru.id);
@@ -192,7 +192,7 @@ export async function simpanKejadian(data: FormData, id?: number, mediaAwal?: Be
           idTersimpan = Number(ubah.id);
         } else {
           const baru = await prisma.events.create({
-            data: { ...isi, image_en: null, created_at: new Date() },
+            data: { ...isi, created_at: new Date() },
             select: { id: true },
           });
           idTersimpan = Number(baru.id);

@@ -1,5 +1,6 @@
 import { SignJWT, jwtVerify } from "jose";
 import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
 
 const NAMA_COOKIE = "fire_sesi";
 const UMUR = 60 * 60 * 8; // 8 jam
@@ -48,7 +49,7 @@ export async function bacaSesi(): Promise<Sesi | null> {
 }
 
 export async function hapusSesi() {
-  (await cookies()).delete(NAMA_COOKIE);
+  (await cookies()).delete({ name: NAMA_COOKIE, path: "/" });
 }
 
 /** Peran yang boleh mengelola kejadian — sama dengan role:admin,editor di
@@ -56,3 +57,25 @@ export async function hapusSesi() {
 export function bolehKelola(peran: string): boolean {
   return peran === "admin" || peran === "editor";
 }
+
+/**
+ * Memastikan pengguna memiliki sesi yang sah dan peran yang berwenang (admin/editor).
+ * Mengembalikan objek Sesi jika sah, atau null jika tidak berwenang.
+ */
+export async function pastikanBolehKelola(): Promise<Sesi | null> {
+  const sesi = await bacaSesi();
+  if (!sesi || !bolehKelola(sesi.peran)) return null;
+  return sesi;
+}
+
+/**
+ * Memastikan pengguna memiliki sesi yang sah dan peran yang berwenang (admin/editor).
+ * Mengalihkan ke /admin/login jika belum masuk, atau ke /admin/kejadian jika peran tidak mencukupi peranKhusus.
+ */
+export async function wajibSesi(peranKhusus?: "admin"): Promise<Sesi> {
+  const sesi = await bacaSesi();
+  if (!sesi || !bolehKelola(sesi.peran)) redirect("/admin/login");
+  if (peranKhusus && sesi.peran !== peranKhusus) redirect("/admin/kejadian");
+  return sesi;
+}
+

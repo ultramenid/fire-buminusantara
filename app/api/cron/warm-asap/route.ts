@@ -5,46 +5,9 @@ import { hangatkanSemuaFrame } from "@/lib/zarr-reader";
 export const maxDuration = 60; // Timeout 60 detik untuk pre-warm background
 
 function timingSafeCompare(a: string, b: string): boolean {
-  const bufA = Buffer.from(a);
-  const bufB = Buffer.from(b);
-
-  if (bufA.length !== bufB.length) {
-    return false;
-  }
-
-  return crypto.timingSafeEqual(bufA, bufB);
-}
-
-function isLocalhostRequest(req: NextRequest): boolean {
-  const hostname = req.nextUrl.hostname.toLowerCase();
-  if (
-    hostname === "localhost" ||
-    hostname === "127.0.0.1" ||
-    hostname === "::1" ||
-    hostname === "[::1]"
-  ) {
-    return true;
-  }
-
-  const hostHeader = (req.headers.get("host") || "").toLowerCase().split(":")[0];
-  if (
-    hostHeader === "localhost" ||
-    hostHeader === "127.0.0.1" ||
-    hostHeader === "::1" ||
-    hostHeader === "[::1]"
-  ) {
-    return true;
-  }
-
-  const forwardedFor = req.headers.get("x-forwarded-for");
-  if (forwardedFor) {
-    const clientIp = forwardedFor.split(",")[0].trim().toLowerCase();
-    if (clientIp === "127.0.0.1" || clientIp === "::1") {
-      return true;
-    }
-  }
-
-  return false;
+  const hashA = crypto.createHash("sha256").update(a).digest();
+  const hashB = crypto.createHash("sha256").update(b).digest();
+  return crypto.timingSafeEqual(hashA, hashB);
 }
 
 async function prosesPrewarm(req: NextRequest) {
@@ -95,11 +58,6 @@ async function prosesPrewarm(req: NextRequest) {
       if (!secretKey) {
         console.warn(
           "[Cron warm-asap] Development mode: CRON_SECRET is not configured. Allowing invocation without secret."
-        );
-        isAuthorized = true;
-      } else if (isLocalhostRequest(req) && !token) {
-        console.warn(
-          "[Cron warm-asap] Development mode: Allowing unauthenticated invocation from localhost."
         );
         isAuthorized = true;
       }

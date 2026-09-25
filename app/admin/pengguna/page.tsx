@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
-import { bacaSesi, bolehKelola } from "@/lib/sesi";
+import { wajibSesi } from "@/lib/sesi";
 import { HALAMAN, KopHalaman } from "../kop-halaman";
 import { Paginasi } from "../paginasi";
 
@@ -23,8 +23,7 @@ export default async function DaftarPengguna({
 }: {
   searchParams: Promise<{ halaman?: string; page?: string }>;
 }) {
-  const sesi = await bacaSesi();
-  if (!sesi || !bolehKelola(sesi.peran)) redirect("/admin/login");
+  const sesi = await wajibSesi();
   // Mengelola akun adalah urusan admin; editor cukup mengerjakan kejadiannya.
   if (sesi.peran !== "admin") redirect("/admin");
 

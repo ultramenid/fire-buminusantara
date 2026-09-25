@@ -2,22 +2,10 @@
 // DATABASE_URL terpasang di .env (dotenv dipanggil manual — Prisma 7
 // lewat driver adapter, bukan env di schema).
 import "dotenv/config";
-import { PrismaClient } from "@prisma/client";
-import { PrismaMariaDb } from "@prisma/adapter-mariadb";
 import bcrypt from "bcryptjs";
+import { getCliPrisma } from "./lib/db.mjs";
 
-const url = new URL(process.env.DATABASE_URL);
-
-const prisma = new PrismaClient({
-  adapter: new PrismaMariaDb({
-    host: url.hostname,
-    port: Number(url.port || 3306),
-    user: decodeURIComponent(url.username),
-    password: decodeURIComponent(url.password),
-    database: url.pathname.replace(/^\//, ""),
-    connectionLimit: 5,
-  }),
-});
+const prisma = getCliPrisma(5);
 
 const sekarang = new Date();
 

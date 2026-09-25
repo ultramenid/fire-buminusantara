@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   rapikanLokasi, inferProvinsi, inferPulau,
   ringkasNamaProvinsi, namaProvinsiLokal,
+  tabDariPulau, PULAU_TAB,
 } from "./wilayah.ts";
 
 test("rapikanLokasi membuka kurung dan membuang kode pos", () => {
@@ -44,3 +45,17 @@ test("namaProvinsiLokal meloloskan yang tak dikenal apa adanya", () => {
   assert.equal(namaProvinsiLokal("Kalimantan Barat"), "Kalimantan Barat");
   assert.equal(namaProvinsiLokal("Atlantis"), "Atlantis");
 });
+
+test("tabDariPulau memetakan pulau ke tab yang sesuai", () => {
+  assert.equal(tabDariPulau("Sumatra"), "Sumatra");
+  assert.equal(tabDariPulau("Jawa"), "Jawa");
+  assert.equal(tabDariPulau("Bali-Nusa"), "Jawa");
+  assert.equal(tabDariPulau("Kalimantan"), "Kalimantan");
+  assert.equal(tabDariPulau("Sulawesi"), "Sulawesi");
+  assert.equal(tabDariPulau("Maluku"), "Maluku");
+  assert.equal(tabDariPulau("Papua"), "Papua");
+  assert.equal(tabDariPulau("Antartika"), null);
+  assert.equal(tabDariPulau(null), null);
+  assert.equal(PULAU_TAB.length, 6);
+});
+

@@ -1,7 +1,6 @@
 import Link from "next/link";
-import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
-import { bacaSesi, bolehKelola } from "@/lib/sesi";
+import { wajibSesi } from "@/lib/sesi";
 import { HALAMAN, KopHalaman } from "../kop-halaman";
 import { Paginasi } from "../paginasi";
 import { DaftarTampilan, type ItemKejadian } from "./daftar-tampilan";
@@ -13,8 +12,7 @@ export default async function DaftarKejadian({
 }: {
   searchParams: Promise<{ cari?: string; halaman?: string; page?: string }>;
 }) {
-  const sesi = await bacaSesi();
-  if (!sesi || !bolehKelola(sesi.peran)) redirect("/admin/login");
+  await wajibSesi();
 
   const params = await searchParams;
   const kata = (params.cari ?? "").trim();

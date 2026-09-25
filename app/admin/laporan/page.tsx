@@ -1,6 +1,5 @@
 import Link from "next/link";
-import { redirect } from "next/navigation";
-import { bacaSesi, bolehKelola } from "@/lib/sesi";
+import { wajibSesi } from "@/lib/sesi";
 import {
   daftarLaporan, adaStatus, NAMA_STATUS,
   type Lampiran, type StatusLaporan,
@@ -38,8 +37,7 @@ export default async function Laporan({
 }: {
   searchParams: Promise<{ status?: string; halaman?: string }>;
 }) {
-  const sesi = await bacaSesi();
-  if (!sesi || !bolehKelola(sesi.peran)) redirect("/admin/login");
+  const sesi = await wajibSesi();
 
   const params = await searchParams;
   const pilihan = params.status ?? "pending";

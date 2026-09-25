@@ -16,71 +16,6 @@ export const BIDANG_NAMA = "level_3";
 export const BIDANG_PULAU = "level_2";
 export const BIDANG_LUAS = "deforestas";
 
-/** Kotak pembatas Indonesia — dipakai mengepaskan peta ke wadahnya. */
-export const BATAS: [[number, number], [number, number]] = [
-  [-11.2, 94.7],
-  [6.4, 141.3],
-];
-
-/** Sisi raster GetFeatureInfo berjendela sendiri. 256 sudah cukup halus untuk
- *  provinsi terkecil, dan lebih hemat daripada 512: yang membuat jawaban besar
- *  bukan resolusinya melainkan jumlah pulau. */
-export const PIKSEL_QUERY = 256;
-
-export type FiturWilayah = {
-  properties: Record<string, string | number | null>;
-  geometry: { type: string; coordinates: unknown };
-};
-
-/**
- * Identifikasi provinsi di sebuah titik.
- *
- * `derajat` mengganti bingkai peta yang sedang tampil dengan kotak sendiri
- * berpusat di titik itu. Perlu pada jalur pilih-lewat-nama: di ponsel peta cuma
- * ~150px untuk seluruh Indonesia, satu piksel query menutupi puluhan kilometer,
- * dan provinsi sekecil DKI Jakarta terjawab sebagai tetangganya.
- */
-export async function getFeatureInfo(
-  bingkai:
-    | { jenis: "peta"; bbox: string; lebar: number; tinggi: number; x: number; y: number }
-    | { jenis: "jendela"; lng: number; lat: number; derajat: number },
-): Promise<FiturWilayah | null> {
-  const p =
-    bingkai.jenis === "jendela"
-      ? (() => {
-          const s = bingkai.derajat / 2;
-          return {
-            bbox: [bingkai.lng - s, bingkai.lat - s, bingkai.lng + s, bingkai.lat + s].join(","),
-            width: String(PIKSEL_QUERY),
-            height: String(PIKSEL_QUERY),
-            x: String(Math.round(PIKSEL_QUERY / 2)),
-            y: String(Math.round(PIKSEL_QUERY / 2)),
-          };
-        })()
-      : {
-          bbox: bingkai.bbox,
-          width: String(bingkai.lebar),
-          height: String(bingkai.tinggi),
-          x: String(bingkai.x),
-          y: String(bingkai.y),
-        };
-
-  const params = new URLSearchParams({
-    service: "WMS", version: "1.1.0", request: "GetFeatureInfo",
-    layers: WMS_LAYER, query_layers: WMS_LAYER,
-    info_format: "application/json", feature_count: "1", srs: "EPSG:4326",
-    ...p,
-  });
-
-  try {
-    const r = await fetch(`${WMS_URL}?${params}`);
-    const data = await r.json();
-    return data?.features?.[0] ?? null;
-  } catch {
-    return null;
-  }
-}
-
 /** Satu baris pada daftar "3 provinsi dengan kebakaran terluas". */
 export type ProvinsiTeratas = {
   peringkat: number;
@@ -142,49 +77,6 @@ export type KabupatenTerluas = {
   /** Sudah diformat id-ID; satuannya hektare. */
   luas: string;
 };
-
-/** Layer kabupaten memakai atribut berbeda dari provinsi — lihat kepala berkas. */
-const LAYER_KABUPATEN = "proteus:KABUPATEN_STADI_2025";
-
-/** Semua kabupaten berluas kebakaran, terluas dulu. Sama seperti
- *  tigaTeratasTercache: tanpa try/catch supaya galat tidak ikut tersimpan. */
-async function kabupatenTercache(): Promise<KabupatenTerluas[]> {
-  "use cache";
-  cacheLife("hours");
-
-  const params = new URLSearchParams({
-    service: "WFS", version: "1.1.0", request: "GetFeature",
-    typeName: LAYER_KABUPATEN,
-    propertyName: "level_3,level_4,luas",
-    sortBy: "luas D",
-    outputFormat: "application/json",
-    CQL_FILTER: "luas IS NOT NULL",
-  });
-
-  const r = await fetch(`${WFS_URL}?${params}`, {
-    signal: AbortSignal.timeout(6000),
-  });
-  const data = await r.json();
-  return (data?.features ?? []).map(
-    (f: { properties: Record<string, string | number> }) => ({
-      nama: String(f.properties.level_4),
-      provinsi: String(f.properties.level_3),
-      luas: Math.round(Number(f.properties.luas)).toLocaleString("id-ID"),
-    }),
-  );
-}
-
-export async function ambilKabupaten(): Promise<KabupatenTerluas[]> {
-  if (process.env.PETA_DUMMY === "1") {
-    const { KABUPATEN_CONTOH } = await import("./contoh-peta");
-    return KABUPATEN_CONTOH;
-  }
-  try {
-    return await kabupatenTercache();
-  } catch {
-    return [];
-  }
-}
 
 export async function ambilTigaTeratas(): Promise<ProvinsiTeratas[]> {
   // Mode contoh (PETA_DUMMY=1): jangan panggil GeoServer, langsung statis.

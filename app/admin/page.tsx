@@ -1,7 +1,6 @@
 import Link from "next/link";
-import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
-import { bacaSesi, bolehKelola } from "@/lib/sesi";
+import { wajibSesi } from "@/lib/sesi";
 import { HALAMAN, KopHalaman } from "./kop-halaman";
 import { Pratinjau } from "./pratinjau";
 
@@ -12,8 +11,7 @@ const tanggalPendek = new Intl.DateTimeFormat("id-ID", { day: "2-digit", month: 
 const waktu = new Intl.DateTimeFormat("id-ID", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
 
 export default async function Ringkasan() {
-  const sesi = await bacaSesi();
-  if (!sesi || !bolehKelola(sesi.peran)) redirect("/admin/login");
+  const sesi = await wajibSesi();
 
   const [jumlahKejadian, jumlahKomentar, belumDisetujui, kejadianTerbaru, komentarTerbaru] =
     await Promise.all([
