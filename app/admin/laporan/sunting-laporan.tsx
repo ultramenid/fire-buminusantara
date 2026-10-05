@@ -10,7 +10,11 @@ import { PetaLokasi } from "../peta-lokasi";
 import { aksiSuntingLaporan } from "./aksi";
 
 /** Hasil satu kali simpan. `null` = belum pernah disimpan di sesi ini. */
-type Keadaan = { ok: true } | { ok: false; galat: string } | null;
+type Isian = { judul: string; judulEn: string; deskripsi: string; deskripsiEn: string; statusKejadian: string };
+/** Gagal membawa kembali ketikan kurator: React 19 me-reset field tak terkendali
+ *  setelah setiap aksi form, termasuk yang gagal — tanpa ini suntingannya
+ *  kembali ke nilai basis data begitu server menolak. */
+type Keadaan = { ok: true } | { ok: false; galat: string; isian: Isian } | null;
 
 /**
  * Perapian laporan sebelum diverifikasi.
@@ -68,17 +72,20 @@ export function SuntingLaporan({
 
   const [keadaan, kirim, sibuk] = useActionState<Keadaan, FormData>(
     async (_sebelum, data) => {
-      const hasil = await aksiSuntingLaporan(id, {
+      const isian: Isian = {
         judul: String(data.get("judul") ?? ""),
         judulEn: String(data.get("judulEn") ?? ""),
         deskripsi: String(data.get("deskripsi") ?? ""),
         deskripsiEn: String(data.get("deskripsiEn") ?? ""),
-        lokasi: String(data.get("lokasi") ?? ""),
         statusKejadian: String(data.get("statusKejadian") ?? ""),
+      };
+      const hasil = await aksiSuntingLaporan(id, {
+        ...isian,
+        lokasi: String(data.get("lokasi") ?? ""),
         lat: String(data.get("lat") ?? ""),
         lng: String(data.get("lng") ?? ""),
       });
-      return hasil;
+      return hasil.ok ? hasil : { ...hasil, isian };
     },
     null,
   );
@@ -92,6 +99,8 @@ export function SuntingLaporan({
   useEffect(() => {
     if (keadaan?.ok) router.refresh();
   }, [keadaan, router]);
+
+  const isi = keadaan && !keadaan.ok ? keadaan.isian : null;
 
   if (terkunci) {
     return (
@@ -110,23 +119,23 @@ export function SuntingLaporan({
     <form action={kirim} className="grid gap-5">
       <div className="grid gap-5 sm:grid-cols-2">
         <Isian
-          label="Judul (ID)" nama="judul" nilai={judul} wajib mati={sibuk} panjangMaks={255}
+          label="Judul (ID)" nama="judul" nilai={isi?.judul ?? judul} wajib mati={sibuk} panjangMaks={255}
           bantuan="Jadi judul kejadian publik saat laporan diverifikasi."
         />
         <Isian
-          label="Judul (EN)" nama="judulEn" nilai={judulEn} mati={sibuk} panjangMaks={255}
+          label="Judul (EN)" nama="judulEn" nilai={isi?.judulEn ?? judulEn} mati={sibuk} panjangMaks={255}
           bantuan="Kosongkan untuk memakai judul Indonesia apa adanya."
         />
       </div>
 
       <div className="grid gap-5 sm:grid-cols-2">
         <IsianPanjang
-          label="Deskripsi (ID)" nama="deskripsi" nilai={deskripsi} wajib mati={sibuk}
+          label="Deskripsi (ID)" nama="deskripsi" nilai={isi?.deskripsi ?? deskripsi} wajib mati={sibuk}
           baris={7} panjangMaks={5000}
           bantuan="Cerita pelapor, dirapikan seperlunya."
         />
         <IsianPanjang
-          label="Deskripsi (EN)" nama="deskripsiEn" nilai={deskripsiEn} mati={sibuk}
+          label="Deskripsi (EN)" nama="deskripsiEn" nilai={isi?.deskripsiEn ?? deskripsiEn} mati={sibuk}
           baris={7} panjangMaks={5000}
           bantuan="Boleh dikosongkan — kejadiannya lahir tanpa deskripsi Inggris."
         />
@@ -143,7 +152,7 @@ export function SuntingLaporan({
           mengirimkannya — tapi tidak boleh terisi sebelah. */}
       <div className="grid gap-5 sm:grid-cols-2">
         <IsianKoordinat label="Latitude" nama="lat" nilai={lat} onUbah={setLat} mati={sibuk}
-                        bantuan="-90 sampai 90. Kosongkan bila pelapor tidak mengirim lokasi." />
+                        bantuan="-90 sampai 90. Wajib sebelum verifikasi — kejadian tanpa titik tidak bisa tampil di peta." />
         <IsianKoordinat label="Longitude" nama="lng" nilai={lng} onUbah={setLng} mati={sibuk}
                         bantuan="-180 sampai 180." />
       </div>
@@ -153,7 +162,7 @@ export function SuntingLaporan({
           dan menggeser penanda jauh lebih cepat daripada mengarang angka. */}
       <div>
         <p className="cms-mata mb-1.5">Perbaiki titik di peta</p>
-        <div className="overflow-hidden rounded-[3px] border border-[var(--garis-tegas)]">
+        <div className="overflow-hidden rounded-[var(--jari)] border border-[var(--garis-tegas)]">
           <PetaLokasi lat={lat} lng={lng}
                       onPilih={(a, b) => { setLat(a.toFixed(6)); setLng(b.toFixed(6)); }} />
         </div>
@@ -167,7 +176,7 @@ export function SuntingLaporan({
           terhadap laporannya. Verifikasi tetap memutuskan laporannya. */}
       <div>
         <label htmlFor="statusKejadian" className="cms-mata mb-1.5 block">Keadaan tayang kejadian</label>
-        <select id="statusKejadian" name="statusKejadian" defaultValue={statusKejadian}
+        <select id="statusKejadian" name="statusKejadian" defaultValue={isi?.statusKejadian ?? statusKejadian}
                 disabled={sibuk} className="cms-isian w-full sm:max-w-[320px]">
           <option value="published">Publish — langsung tayang saat diverifikasi</option>
           <option value="draft">Draft — dibuat tapi belum tampil di situs publik</option>

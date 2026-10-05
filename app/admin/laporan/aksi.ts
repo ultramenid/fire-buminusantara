@@ -3,7 +3,7 @@
 import { redirect } from "next/navigation";
 import { wajibSesi } from "@/lib/sesi";
 import {
-  aturStatusLaporan, hapusLaporan, aturOrientasiLaporan, suntingLaporan,
+  aturStatusLaporan, hapusLaporan, aturOrientasiLaporan, suntingLaporan, adaStatus,
   type StatusLaporan,
 } from "@/lib/laporan-publik";
 import type { Orientasi } from "@/lib/media";
@@ -14,11 +14,17 @@ async function jaga() {
   return wajibSesi();
 }
 
+/** Argumen aksi datang dari POST mentah, bukan dari tipe TypeScript: nilai di
+ *  luar daftar dibalas galat biasa, bukan exception Prisma ke batas galat. */
+const TIDAK_SAH = { ok: false as const, galat: "Permintaan tidak sah." };
+const idSah = (id: unknown): id is number => Number.isSafeInteger(id) && (id as number) > 0;
+
 /** Putuskan satu laporan: terverifikasi, ditolak, atau dikembalikan ke antrean.
  *  Mengembalikan hasilnya supaya antarmuka bisa menampilkan kegagalan (mis.
  *  kalau laporan terverifikasi gagal naik menjadi kejadian). */
 export async function aksiStatus(id: number, status: StatusLaporan) {
   const sesi = await jaga();
+  if (!idSah(id) || typeof status !== "string" || !adaStatus(status)) return TIDAK_SAH;
   return aturStatusLaporan(id, status, sesi.id);
 }
 
@@ -27,6 +33,7 @@ export async function aksiStatus(id: number, status: StatusLaporan) {
 export async function aksiHapusLaporan(id: number) {
   const sesi = await jaga();
   if (sesi.peran !== "admin") redirect("/admin/laporan");
+  if (!idSah(id)) return TIDAK_SAH;
   await hapusLaporan(id);
   return { ok: true as const };
 }
@@ -43,6 +50,7 @@ export async function aksiSuntingLaporan(
   },
 ) {
   await jaga();
+  if (!idSah(id)) return TIDAK_SAH;
   return suntingLaporan(id, masukan);
 }
 
@@ -50,11 +58,13 @@ export async function aksiSuntingLaporan(
  *  Boleh editor maupun admin — meninjau berarti juga menandai orientasinya. */
 export async function aksiOrientasi(id: number, url: string, orientasi: Orientasi) {
   await jaga();
+  if (!idSah(id) || typeof url !== "string" || (orientasi !== "potret" && orientasi !== "lanskap")) return TIDAK_SAH;
   return aturOrientasiLaporan(id, url, orientasi);
 }
 
 /** Atur urutan lampiran laporan warga (atas/bawah/pertama). */
 export async function aksiUrutanLampiran(id: number, url: string, arah: "atas" | "bawah" | "pertama") {
   await jaga();
+  if (!idSah(id) || typeof url !== "string" || !["atas", "bawah", "pertama"].includes(arah)) return TIDAK_SAH;
   return (await import("@/lib/laporan-publik")).aturUrutanLampiran(id, url, arah);
 }

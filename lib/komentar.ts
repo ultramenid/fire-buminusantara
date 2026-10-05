@@ -1,5 +1,5 @@
-import { prisma } from "./prisma";
-import kataKasar from "./kata-kasar.json";
+import { prisma } from "./prisma.ts";
+import kataKasar from "./kata-kasar.json" with { type: "json" };
 
 /** Model polimorfik dipakai bersama halaman lain di Pasopati; nilainya harus
  *  sama persis dengan yang ditulis Laravel. */

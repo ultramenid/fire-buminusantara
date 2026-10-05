@@ -107,6 +107,24 @@ export async function redisSet(kunci: string, nilai: string, ttlDetik?: number):
 }
 
 /**
+ * Naikkan penghitung dan pasang TTL saat pertama dibuat (jendela tetap).
+ * `null` = Redis tidak tersedia; pemanggil memakai cadangannya sendiri.
+ */
+export async function redisIncr(kunci: string, ttlDetik: number): Promise<number | null> {
+  try {
+    const klien = await pastikanTerhubung();
+    if (!klien) return null;
+    const n = await klien.incr(kunci);
+    // TTL hanya saat kunci lahir (jendela tetap). Bukan EXPIRE … NX: itu
+    // butuh Redis ≥ 7, dan versi lama akan diam-diam jatuh ke cadangan memori.
+    if (n === 1) await klien.expire(kunci, ttlDetik);
+    return n;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Mengambil binary buffer dari Redis berdasarkan kunci.
  */
 export async function redisGetBuffer(kunci: string): Promise<Buffer | null> {

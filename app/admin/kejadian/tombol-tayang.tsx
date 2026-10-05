@@ -1,9 +1,8 @@
 "use client";
 
-import { useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
 import { aksiTayang } from "./aksi";
 import { Pemuat } from "../pemuat";
+import { useAksi } from "../use-aksi";
 
 /**
  * Alih draft ↔ publish langsung dari daftar, tanpa membuka form.
@@ -19,12 +18,8 @@ import { Pemuat } from "../pemuat";
  * membuat orang ragu apakah ini penanda atau tombol.
  */
 export function TombolTayang({ id, status }: { id: number; status: string }) {
-  const [sibuk, mulai] = useTransition();
-  const [galat, setGalat] = useState(false);
-  const router = useRouter();
-
+  const [sibuk, jalankan] = useAksi();
   const draft = status === "draft";
-  const tujuan = draft ? "published" : "draft";
 
   return (
     <button
@@ -34,23 +29,14 @@ export function TombolTayang({ id, status }: { id: number; status: string }) {
       title={draft
         ? "Tayangkan di situs publik"
         : "Sembunyikan dari situs publik — isinya tetap tersimpan"}
-      onClick={() =>
-        mulai(async () => {
-          setGalat(false);
-          try {
-            await aksiTayang(id, tujuan);
-            router.refresh();
-          } catch {
-            setGalat(true);
-          }
-        })
-      }
-      className={`cms-tombol cms-tombol--kecil shrink-0 ${
-        draft ? "cms-tombol--utama" : "cms-tombol--garis"
-      }`}
+      onClick={() => jalankan(
+        () => aksiTayang(id, draft ? "published" : "draft"),
+        draft ? "Kejadian tayang di situs." : "Kejadian dijadikan draft.",
+      )}
+      className="cms-tombol cms-tombol--kecil cms-tombol--hantu shrink-0"
     >
       {sibuk && <Pemuat />}
-      {galat ? "Gagal, ulangi" : draft ? "Publish" : "Jadikan draft"}
+      {draft ? "Publish" : "Jadikan draft"}
     </button>
   );
 }

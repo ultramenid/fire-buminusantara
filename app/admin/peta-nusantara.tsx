@@ -104,7 +104,7 @@ export function PetaNusantara({
             className={nyala ? "cms-peta__sorot" : undefined}
             fill={nyala ? "#e60012" : "none"}
             fillOpacity={nyala ? 0.9 : 0}
-            stroke={nyala ? "#ffd7d0" : "#4b4a3f"}
+            stroke={nyala ? "#ffd7d0" : "#3b3b3f"}
             strokeWidth={nyala ? 2 : 1.1}
             strokeLinejoin="round"
             style={{ animationDelay: `${i * 22}ms` }}

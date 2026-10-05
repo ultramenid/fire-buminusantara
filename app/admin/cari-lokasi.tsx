@@ -65,6 +65,9 @@ export function CariLokasi({
   const [mencari, setMencari] = useState(false);
   const [memuatLagi, setMemuatLagi] = useState(false);
   const [habis, setHabis] = useState(false);
+  // Dulu "tidak ada hasil" dan "pencarian gagal" sama-sama berarti daftar
+  // tidak muncul — editor tak tahu harus mengetik lain atau mencoba lagi.
+  const [kabar, setKabar] = useState<"" | "kosong" | "gagal">("");
 
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   // Nomor permintaan membuang jawaban yang sudah ketinggalan: mengetik cepat
@@ -79,10 +82,15 @@ export function CariLokasi({
       const r = await fetch(`/api/lokasi?q=${encodeURIComponent(kata)}&offset=${geser}`);
       const baru: Lokasi[] = r.ok ? (await r.json()).hasil ?? [] : [];
       if (id !== permintaan.current) return;
+      if (geser === 0) setKabar(!r.ok ? "gagal" : baru.length === 0 ? "kosong" : "");
       setHasil((lama) => (geser === 0 ? baru : [...lama, ...baru]));
       setHabis(baru.length < BAGI);
     } catch {
-      if (id === permintaan.current) { setHasil(geser === 0 ? [] : (lama) => lama); setHabis(true); }
+      if (id === permintaan.current) {
+        setHasil(geser === 0 ? [] : (lama) => lama);
+        setHabis(true);
+        if (geser === 0) setKabar("gagal");
+      }
     } finally {
       if (id === permintaan.current) { setMencari(false); setMemuatLagi(false); }
     }
@@ -91,6 +99,7 @@ export function CariLokasi({
   function cari(kata: string) {
     clearTimeout(timer.current);
     const t = kata.trim();
+    setKabar("");
     if (t.length < 2) { setHasil([]); setHabis(false); return; }
     // Ditunda sedikit supaya setiap ketikan tidak menembak database jauh.
     timer.current = setTimeout(() => ambil(t, 0), 300);
@@ -112,7 +121,15 @@ export function CariLokasi({
       />
       {bantuan && <Bantuan>{bantuan}</Bantuan>}
 
-      {mencari && <p className="cms-mata mt-2">Mencari…</p>}
+      <p role="status" className="cms-mata mt-2 empty:hidden">
+        {mencari
+          ? "Mencari…"
+          : kabar === "kosong"
+          ? "Tidak ada tempat yang cocok. Coba nama desa, kecamatan, atau kabupaten."
+          : kabar === "gagal"
+          ? "Pencarian gagal. Ketik ulang untuk mencoba lagi, atau isi koordinat manual."
+          : ""}
+      </p>
 
       {hasil.length > 0 && (
         <ul
@@ -123,7 +140,7 @@ export function CariLokasi({
               ambil(nilai.trim(), hasil.length);
             }
           }}
-          className="mt-2 max-h-56 overflow-y-auto rounded-[3px] border border-[var(--garis-tegas)]
+          className="mt-2 max-h-56 overflow-y-auto rounded-[var(--jari)] border border-[var(--garis-tegas)]
                      bg-[var(--papan)]"
         >
           {hasil.map((h) => (
@@ -132,7 +149,7 @@ export function CariLokasi({
                 type="button"
                 onClick={() => { onPilih(h.nama, h.lat, h.lng); setHasil([]); }}
                 className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left
-                           text-[13.5px] hover:bg-white"
+                           text-[13.5px] hover:bg-[var(--rona)]"
               >
                 <span className="min-w-0 truncate"><Sorot teks={h.nama} kata={nilai} /></span>
                 <span className="cms-angka shrink-0 text-[11.5px] text-[var(--lirih)]">

@@ -3,6 +3,11 @@ import { masuk } from "@/lib/auth";
 import { bacaSesi, buatSesi } from "@/lib/sesi";
 import { ambilTigaTeratas } from "@/lib/wms";
 import { bacaNusantara, PetaNusantara } from "../peta-nusantara";
+import { TombolKirim } from "../tombol-kirim";
+import { TombolMasukPasskey } from "../tombol-passkey";
+import { headers } from "next/headers";
+import { ipDari } from "@/lib/turnstile";
+import { lewatBatas } from "@/lib/batas-laju";
 
 export default async function Masuk({
   searchParams,
@@ -23,10 +28,14 @@ export default async function Masuk({
 
   async function kirim(data: FormData) {
     "use server";
-    const sesi = await masuk(
-      String(data.get("email") ?? "").trim(),
-      String(data.get("sandi") ?? ""),
-    );
+    const email = String(data.get("email") ?? "").trim();
+    // Tebak sandi: 10 percobaan / 15 menit per IP dan per email (yang kedua
+    // menahan tebakan tersebar dari banyak IP ke satu akun).
+    const ip = ipDari(new Request("http://lokal", { headers: await headers() }));
+    if ((ip && (await lewatBatas(`masuk:ip:${ip}`, 10, 900))) || (await lewatBatas(`masuk:email:${email.toLowerCase()}`, 10, 900))) {
+      redirect("/admin/login?galat=laju");
+    }
+    const sesi = await masuk(email, String(data.get("sandi") ?? ""));
     // Pesan yang sama untuk email tak dikenal, sandi salah, maupun peran yang
     // tidak berhak — supaya tidak bisa dipakai menebak akun mana yang ada.
     if (!sesi) redirect("/admin/login?galat=1");
@@ -38,9 +47,9 @@ export default async function Masuk({
     <main className="grid min-h-screen lg:grid-cols-[1.05fr_minmax(400px,0.95fr)]">
       {/* Pintu masuk memperlihatkan yang dijaga: seluruh Nusantara sebagai garis
           rambut, dengan provinsi dengan kebakaran terluas menyala satu-satunya. */}
-      <section className="cms-punggung relative flex min-h-[260px] flex-col justify-between
+      <section className="relative bg-[hsl(240_0%_7%)] text-white flex min-h-[140px] flex-col justify-between sm:min-h-[260px]
                           overflow-hidden p-6 lg:p-10">
-        <p className="cms-judul relative z-10 text-[20px] text-white">
+        <p className="cms-judul relative z-10 text-[17px] text-white">
           Pasopati<span className="text-[var(--api)]">.</span>Fire
         </p>
 
@@ -53,16 +62,16 @@ export default async function Masuk({
         <div className="relative z-10 mt-8">
           {puncak ? (
             <>
-              <p className="cms-mata text-[#78776d]">Kebakaran terluas</p>
+              <p className="cms-mata text-white/50">Kebakaran terluas</p>
               <p className="cms-judul mt-1.5 text-[22px] text-white">
                 {puncak.nama}
               </p>
-              <p className="cms-angka mt-1 text-[13px] text-[#a8a79c]">
+              <p className="cms-angka mt-1 text-[13px] text-white/65">
                 {puncak.luas} ha · {puncak.pulau}
               </p>
             </>
           ) : (
-            <p className="cms-mata text-[#78776d]">Pantauan karhutla Indonesia</p>
+            <p className="cms-mata text-white/50">Pantauan karhutla Indonesia</p>
           )}
         </div>
       </section>
@@ -70,7 +79,7 @@ export default async function Masuk({
       <section className="flex items-center justify-center p-6 lg:p-10">
         <form action={kirim} className="w-full max-w-[380px]">
           <p className="cms-mata">Meja jaga karhutla</p>
-          <h1 className="cms-judul mt-2 text-[32px] leading-[1.05]">Masuk</h1>
+          <h1 className="cms-judul mt-2 text-[26px]">Masuk</h1>
           <p className="mt-2.5 text-[14px] text-[var(--redup)]">
             Catat kejadian lapangan dan tinjau komentar yang masuk.
           </p>
@@ -78,7 +87,9 @@ export default async function Masuk({
           {galat && (
             <p role="alert" className="cms-galat mt-5">
               <span aria-hidden="true" className="cms-angka font-medium">!</span>
-              Email atau kata sandi tidak cocok.
+              {galat === "laju"
+                ? "Terlalu banyak percobaan masuk. Tunggu 15 menit lalu coba lagi."
+                : "Email atau kata sandi tidak cocok."}
             </p>
           )}
 
@@ -96,9 +107,8 @@ export default async function Masuk({
             </div>
           </div>
 
-          <button type="submit" className="cms-tombol cms-tombol--utama mt-6 w-full">
-            Masuk
-          </button>
+          <TombolKirim className="mt-6 w-full">Masuk</TombolKirim>
+          <TombolMasukPasskey />
 
           <p className="mt-5 border-t border-[var(--garis)] pt-4 text-[12.5px] leading-[1.6] text-[var(--lirih)]">
             Akunnya sama dengan akun Pasopati. Hanya peran admin dan editor yang bisa

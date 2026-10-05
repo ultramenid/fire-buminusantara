@@ -1,14 +1,17 @@
 "use client";
 
-import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from "react";
+import { useActionState, useEffect, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import { Wajib, Bantuan, Isian, IsianPanjang, IsianKoordinat } from "../isian";
 import { useFormStatus } from "react-dom";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { kabari } from "../toko";
 import { PetaLokasi } from "../peta-lokasi";
 import { CariLokasi } from "../cari-lokasi";
 import { BilahUnggah } from "@/components/bilah-unggah";
 import { Pemuat } from "../pemuat";
 import { DatePicker } from "@/components/ui/date-picker";
+import { Kartu } from "../ruang";
 import type { ItemMedia } from "@/lib/media";
 
 export type NilaiAwal = {
@@ -52,9 +55,11 @@ export function FormKejadian({
   awal, aksi, sedangUbah,
 }: {
   awal: NilaiAwal;
-  aksi: (data: FormData) => void;
+  /** Sukses → id kejadian; gagal → galat untuk bilah simpan. */
+  aksi: (data: FormData) => Promise<{ ok: false; galat: string } | { ok: true; id: number }>;
   sedangUbah: boolean;
 }) {
+  const router = useRouter();
   const [judulId, setJudulId] = useState(awal.title_id);
   const [slug, setSlug] = useState(awal.slug);
   const [slugManual, setSlugManual] = useState(Boolean(awal.slug));
@@ -165,9 +170,39 @@ export function FormKejadian({
     return aksi(data);
   }
 
+  // `kiriman` dipakai sebagai defaultValue isian tak terkendali: React 19
+  // me-reset form setelah aksi selesai, termasuk yang gagal — tanpa ini
+  // Judul EN, deskripsi, orientasi, dan status kembali ke nilai awal.
+  const [gagal, kirim] = useActionState(
+    async (_s: { galat: string; kiriman: FormData } | null, data: FormData) => {
+      const hasil = await kirimFormulir(data);
+      if (!hasil.ok) return { galat: hasil.galat, kiriman: data };
+      // Simpan = tetap di form ini; tambah = buka kejadian barunya.
+      if (sedangUbah) {
+        kabari("Perubahan disimpan.");
+        router.refresh();
+      } else {
+        kabari("Kejadian ditambahkan sebagai " + (data.get("status") === "published" ? "tayang." : "draft."));
+        router.push(`/admin/kejadian/${hasil.id}`);
+        // Layout (daftar) tidak ikut dirender saat pindah halaman — segarkan.
+        router.refresh();
+      }
+      return null;
+    },
+    null,
+  );
+  const nilaiKirim = (nama: string, cadangan: string) => {
+    const v = gagal?.kiriman.get(nama);
+    return typeof v === "string" ? v : cadangan;
+  };
+
   return (
-    <form action={kirimFormulir}>
-      <Bagian nomor="01" judul="Laporan">
+    <form action={kirim} className="grid gap-6">
+      <Bagian
+        nomor="01"
+        judul="Laporan"
+        deskripsi="Judul laporan dalam dua bahasa, tautan permanen (slug), dan ringkasan isi kejadian."
+      >
         <Isian
           label="Judul (ID)"
           nama="title_id"
@@ -181,7 +216,7 @@ export function FormKejadian({
             }
           }}
         />
-        <Isian label="Judul (EN)" nama="title_en" wajib nilai={awal.title_en} />
+        <Isian label="Judul (EN)" nama="title_en" wajib nilai={nilaiKirim("title_en", awal.title_en)} />
         <Isian
           label="Slug"
           nama="slug"
@@ -195,14 +230,18 @@ export function FormKejadian({
         />
 
         <div className="grid gap-5 sm:grid-cols-2">
-          <IsianPanjang label="Deskripsi (ID)" nama="description_id" nilai={awal.description_id}
+          <IsianPanjang label="Deskripsi (ID)" nama="description_id" nilai={nilaiKirim("description_id", awal.description_id)}
                         bantuan="Ringkasan kejadian dalam Bahasa Indonesia." />
-          <IsianPanjang label="Deskripsi (EN)" nama="description_en" nilai={awal.description_en}
+          <IsianPanjang label="Deskripsi (EN)" nama="description_en" nilai={nilaiKirim("description_en", awal.description_en)}
                         bantuan="English summary of the event." />
         </div>
       </Bagian>
 
-      <Bagian nomor="02" judul="Waktu & tempat">
+      <Bagian
+        nomor="02"
+        judul="Waktu & tempat"
+        deskripsi="Tanggal kejadian, orientasi tampilan kartu, visibilitas tayang, dan penentuan koordinat peta."
+      >
         <div className="grid gap-5 sm:grid-cols-2">
           <div>
             <label htmlFor="event_date" className="cms-mata mb-1.5 block">
@@ -217,7 +256,7 @@ export function FormKejadian({
           </div>
           <div>
             <label htmlFor="orientation" className="cms-mata mb-1.5 block">Orientasi kartu</label>
-            <select id="orientation" name="orientation" defaultValue={awal.orientation} className="cms-isian w-full">
+            <select id="orientation" name="orientation" defaultValue={nilaiKirim("orientation", awal.orientation)} className="cms-isian w-full">
               <option value="landscape">Landscape — foto di bawah teks</option>
               <option value="horizontal">Horizontal — foto memenuhi kartu</option>
             </select>
@@ -230,7 +269,7 @@ export function FormKejadian({
             sudah boleh melihatnya. */}
         <div>
           <label htmlFor="status" className="cms-mata mb-1.5 block">Keadaan tayang</label>
-          <select id="status" name="status" defaultValue={awal.status} className="cms-isian w-full sm:max-w-[320px]">
+          <select id="status" name="status" defaultValue={nilaiKirim("status", awal.status)} className="cms-isian w-full sm:max-w-[320px]">
             <option value="draft">Draft — hanya terlihat di CMS</option>
             <option value="published">Publish — tayang di situs publik</option>
           </select>
@@ -253,7 +292,7 @@ export function FormKejadian({
             state lat/lng yang sama, jadi saling mengikuti. */}
         <div>
           <p className="cms-mata mb-1.5">Pilih lokasi di peta</p>
-          <div className="overflow-hidden rounded-[3px] border border-[var(--garis-tegas)]">
+          <div className="overflow-hidden rounded-[var(--jari)] border border-[var(--garis-tegas)]">
             <PetaLokasi lat={lat} lng={lng}
                         onPilih={(a, b) => { setLat(a.toFixed(6)); setLng(b.toFixed(6)); }} />
           </div>
@@ -301,13 +340,17 @@ export function FormKejadian({
         </div>
       </Bagian>
 
-      <Bagian nomor="03" judul="Media">
+      <Bagian
+        nomor="03"
+        judul="Media dokumentasi"
+        deskripsi="Foto atau rekaman video lapangan. Berkas nomor 01 otomatis tampil sebagai gambar sampul di beranda."
+      >
         <Galeri daftar={daftarMedia} setDaftar={setDaftarMedia} />
       </Bagian>
 
       {/* Bilah aksi menempel di dasar layar: form ini panjang, dan tombol simpan
           tidak boleh ikut hilang ke bawah saat editor sedang di bagian media. */}
-      <AksiSimpan sedangUbah={sedangUbah} />
+      <AksiSimpan sedangUbah={sedangUbah} galat={gagal?.galat ?? null} />
     </form>
   );
 }
@@ -316,35 +359,58 @@ export function FormKejadian({
  *  tidak boleh ikut hilang ke bawah saat editor sedang di bagian media.
  *  `useFormStatus` harus di komponen anak — ia hanya tahu status <form> di
  *  atasnya di pohon, dan di komponen ini belum ada <form> yang melingkupinya. */
-function AksiSimpan({ sedangUbah }: { sedangUbah: boolean }) {
+function AksiSimpan({ sedangUbah, galat }: { sedangUbah: boolean; galat: string | null }) {
   const { pending } = useFormStatus();
   return (
-    <div className="sticky bottom-0 -mx-5 mt-8 flex flex-wrap items-center gap-3 border-t
-                    border-[var(--garis-tegas)] bg-[var(--kertas)] px-5 py-3 lg:-mx-10 lg:px-10">
-      {pending && <BilahUnggah />}
-      <button type="submit" disabled={pending} aria-busy={pending}
-              className="cms-tombol cms-tombol--utama">
-        {pending && <Pemuat />}
-        {sedangUbah ? "Simpan perubahan" : "Tambah kejadian"}
-      </button>
-      <Link href="/admin/kejadian" className="cms-mata px-1 underline-offset-4 hover:underline">
-        Batal
-      </Link>
+    <div className="sticky bottom-0 z-20 -mx-4 mt-6 flex flex-wrap items-center justify-between gap-3 border-t
+                    border-[var(--garis)] bg-[var(--kertas)]/90 backdrop-blur-md px-4 py-3 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8">
+      {pending && <div className="w-full"><BilahUnggah /></div>}
+      {/* Di bilah simpan, tempat mata editor berada saat menekan tombol. */}
+      {galat && !pending && (
+        <p role="alert" className="cms-galat w-full">{galat}</p>
+      )}
+      <div className="flex items-center gap-2">
+        <button type="submit" disabled={pending} aria-busy={pending}
+                className="cms-tombol cms-tombol--utama">
+          {pending && <Pemuat />}
+          {sedangUbah ? "Simpan perubahan" : "Tambah kejadian"}
+        </button>
+        <Link href="/admin/kejadian" className="cms-tombol cms-tombol--hantu">
+          Batal
+        </Link>
+      </div>
+      <p className="hidden text-[12px] text-[var(--lirih)] sm:block">
+        {sedangUbah ? "Perubahan langsung tersimpan ke sistem." : "Kejadian baru akan dibuat sebagai draft."}
+      </p>
     </div>
   );
 }
 
 /** Satu bagian form. Nomornya menandai urutan kerja, dan urutannya memang
  *  berarti: lokasi menentukan peta, media menentukan tampilan kartunya. */
-function Bagian({ nomor, judul, children }: { nomor: string; judul: string; children: React.ReactNode }) {
+function Bagian({
+  nomor,
+  judul,
+  deskripsi,
+  children,
+}: {
+  nomor: string;
+  judul: string;
+  deskripsi?: string;
+  children: React.ReactNode;
+}) {
   return (
-    <section className="max-w-[820px] border-b border-[var(--garis)] py-7 first:pt-0">
-      <div className="mb-5 flex items-baseline gap-3">
-        <span aria-hidden="true" className="cms-angka text-[13px] text-[var(--lirih)]">{nomor}</span>
-        <h2 className="cms-judul text-[15px]">{judul}</h2>
-      </div>
+    <Kartu
+      judul={
+        <div className="flex items-center gap-2">
+          <span className="cms-cap font-mono font-bold tracking-wider">{nomor}</span>
+          <span>{judul}</span>
+        </div>
+      }
+      deskripsi={deskripsi}
+    >
       <div className="grid gap-5">{children}</div>
-    </section>
+    </Kartu>
   );
 }
 
@@ -587,7 +653,7 @@ function Galeri({
             pilih(e.dataTransfer.files);
           }
         }}
-        className={`rounded-[3px] border-2 border-dashed p-4 text-center transition-colors ${
+        className={`rounded-[var(--jari)] border-2 border-dashed p-4 text-center transition-colors ${
           sedangTarikBerkas
             ? "border-[var(--limau)] bg-[var(--limau)]/10"
             : "border-[var(--garis)] bg-[var(--papan)]"
@@ -642,11 +708,11 @@ function Galeri({
                   onDragLeave={(e) => handleDragLeave(e, m.id)}
                   onDrop={(e) => handleDrop(e, m.id)}
                   onDragEnd={handleDragEnd}
-                  className={`group relative flex flex-col overflow-hidden rounded-[3px] transition-all ${
+                  className={`group relative flex flex-col overflow-hidden rounded-[var(--jari)] transition-all ${
                     m.dibuang
                       ? "border border-dashed border-[var(--garis)] bg-[var(--kertas)] opacity-60"
                       : isFirst
-                        ? "border-2 border-[var(--api)] bg-white shadow-md ring-2 ring-[var(--api)]/20"
+                        ? "border-2 border-[var(--api)] bg-[var(--papan)] shadow-md ring-2 ring-[var(--api)]/20"
                         : "border border-[var(--garis-tegas)] bg-[var(--papan)] hover:border-[var(--redup)]"
                   } ${isBeingDragged ? "opacity-30 scale-95" : ""} ${
                     isDragTarget ? "ring-2 ring-[var(--limau)] scale-[1.02]" : ""
@@ -664,7 +730,7 @@ function Galeri({
                           ★ 01 · TAMPIL PERTAMA
                         </span>
                       ) : (
-                        <span className="cms-cap border-[var(--garis-tegas)] bg-white text-[var(--jelaga)] font-semibold">
+                        <span className="cms-cap border-[var(--garis-tegas)] bg-[var(--papan)] text-[var(--jelaga)] font-semibold">
                           <span className="cms-angka font-bold">
                             {String(activeIndex + 1).padStart(2, "0")}
                           </span>
@@ -795,6 +861,8 @@ function Galeri({
                               onClick={() => toggleBuang(m.id)}
                               disabled={mengirim}
                               title="Buang berkas ini saat disimpan"
+                              aria-label={m.dibuang ? "Batal membuang berkas ini" : "Buang berkas ini saat disimpan"}
+                              aria-pressed={m.dibuang}
                               className="cms-tombol cms-tombol--kecil text-[var(--api)] hover:bg-[var(--api)]/10"
                             >
                               🗑
@@ -821,7 +889,7 @@ function Galeri({
                       disabled={mengirim || m.dibuang}
                       placeholder="Deskripsi / alt teks…"
                       aria-label={`Keterangan media ${activeIndex >= 0 ? activeIndex + 1 : ""}`}
-                      className="w-full rounded-[2px] border border-[var(--garis)] bg-white px-2 py-1 text-[11.5px] text-[var(--jelaga)] outline-none placeholder:text-[var(--lirih)] focus:border-[var(--limau)] disabled:opacity-60"
+                      className="w-full rounded-[4px] border border-[var(--garis)] bg-[var(--papan)] px-2 py-1 text-[11.5px] text-[var(--jelaga)] outline-none placeholder:text-[var(--lirih)] focus:border-[var(--limau)] disabled:opacity-60"
                     />
                   </div>
                 </div>

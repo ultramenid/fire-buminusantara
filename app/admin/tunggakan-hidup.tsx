@@ -7,33 +7,16 @@ import type { Tunggakan } from "@/lib/tunggakan";
 const Konteks = createContext<Tunggakan | null>(null);
 
 /**
- * Halaman yang isinya memang ikut berubah begitu antrean berubah.
- *
- * /admin/kejadian/[id] dan /admin/kejadian/baru sengaja tidak ada di sini:
- * keduanya formulir, dan muat ulang otomatis di tengah penyuntingan akan
- * mengganti props server di bawah kaki editor yang sedang mengetik.
+ * Bagian yang daftarnya memang ikut berubah begitu antrean berubah. Daftar
+ * hidup di layout, jadi rinciannya ikut tersegarkan — aman, karena
+ * `router.refresh()` hanya mengganti props server (state klien utuh) dan
+ * form yang sedang diketik (`data-kotor`, lihat penjaga.tsx) menahan
+ * penyegaran sampai disimpan.
  */
-const DAFTAR_SEGAR = new Set([
-  "/admin",
-  "/admin/kejadian",
-  "/admin/komentar",
-  "/admin/laporan",
-]);
-
-/**
- * Rincian satu laporan ikut disegarkan.
- *
- * Tidak ada suntingan tertunda yang bisa hilang di sana: pilihan orientasi
- * lampiran tersimpan seketika pada klik pertama, dan pertanyaan "Ya,
- * verifikasi" hidup sebagai state komponen klien — `router.refresh()` hanya
- * mengganti props server, pohon kliennya tidak dilepas. Justru di halaman
- * inilah peninjau perlu tahu rekannya baru saja memutuskan laporan yang
- * sedang ia buka.
- */
-const RINCIAN_LAPORAN = /^\/admin\/laporan\/\d+$/;
+const BAGIAN_SEGAR = /^\/admin(\/(komentar|laporan)(\/\d+)?)?$/;
 
 function bolehSegarkan(jalur: string): boolean {
-  return DAFTAR_SEGAR.has(jalur) || RINCIAN_LAPORAN.test(jalur);
+  return BAGIAN_SEGAR.test(jalur) && !document.querySelector("form[data-kotor]");
 }
 
 /** Jeda peredam: satu ledakan (tiga laporan masuk beruntun) jadi satu
@@ -82,14 +65,14 @@ export function TunggakanHidup({
   // Penangan aliran hidup di luar siklus render — ia butuh cermin yang selalu
   // menunjuk keadaan terkini, bukan tangkapan dari render tempat ia dipasang.
   const nilaiRef = useRef(nilai);
-  const bolehSegarRef = useRef(false);
 
   useEffect(() => {
     nilaiRef.current = nilai;
   }, [nilai]);
 
+  const jalurRef = useRef(jalur);
   useEffect(() => {
-    bolehSegarRef.current = bolehSegarkan(jalur);
+    jalurRef.current = jalur;
   }, [jalur]);
 
   useEffect(() => {
@@ -107,7 +90,7 @@ export function TunggakanHidup({
 
     const mintaSegar = () => {
       // Formulir tidak pernah dimuat ulang di belakang penggunanya.
-      if (!bolehSegarRef.current) return;
+      if (!bolehSegarkan(jalurRef.current)) return;
       // Tab yang tidak dilihat tidak perlu membebani server: permintaannya
       // ditahan sampai petugas kembali menatap layar — momen satu-satunya di
       // mana kesegaran benar-benar berarti.

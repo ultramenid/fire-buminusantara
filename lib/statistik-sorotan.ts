@@ -1,7 +1,8 @@
-import { cacheLife, cacheTag } from "next/cache";
-import { BAHASA, type Bahasa } from "./bahasa";
-import { prisma } from "./prisma";
-import { BAWAN_STATISTIK, type Statistik } from "./statistik";
+import { cacheLife, cacheTag } from "next/cache.js";
+import { BAHASA, type Bahasa } from "./bahasa.ts";
+import type { Prisma } from "@prisma/client";
+import { prisma } from "./prisma.ts";
+import { BAWAN_STATISTIK, type Statistik } from "./statistik.ts";
 
 /** Kartu strip statistik landing, per bahasa. */
 export type Sorotan = Record<Bahasa, Statistik[]>;
@@ -73,7 +74,7 @@ export async function simpanSorotan(
   }
 
   const ada = await prisma.sorotan_statistik.findFirst({ orderBy: { id: "asc" }, select: { id: true } });
-  const data = { kartu, updated_at: new Date() };
+  const data = { kartu, updated_at: new Date() } satisfies Prisma.sorotan_statistikUncheckedCreateInput;
   if (ada) {
     await prisma.sorotan_statistik.update({ where: { id: ada.id }, data });
   } else {

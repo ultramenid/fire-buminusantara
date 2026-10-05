@@ -21,17 +21,25 @@ model users {
   email_verified_at DateTime?           @db.Timestamp(0)
   password          String?             @db.VarChar(255)
   image             String?             @db.VarChar(255)
+  /// Warisan basis data bersama (aplikasi Laravel) — tidak dipakai Next.js,
+  /// tapi tetap dideklarasikan supaya schema = migrasi = DB (cek drift di CI).
+  remember_token    String?             @db.VarChar(100)
   created_at        DateTime?           @db.Timestamp(0)
   updated_at        DateTime?           @db.Timestamp(0)
   comment_reactions comment_reactions[]
   comments          comments[]
   public_reports    public_reports[]
+  passkeys          passkeys[]
 }
 
 model events {
   id               BigInt             @id @default(autoincrement()) @db.UnsignedBigInt
   image_id         String?            @db.VarChar(300)
   video            String?            @db.VarChar(300)
+  /// Warisan basis data bersama (aplikasi Laravel) — tidak dipakai Next.js,
+  /// tapi tetap dideklarasikan supaya schema = migrasi = DB (cek drift di CI).
+  image_en         String?            @db.VarChar(300)
+  location_geojson Json?
   /// Galeri media tambahan: [{ path, type: "image" | "video" }]
   media            Json?
   title_id         String             @db.VarChar(255)
@@ -55,6 +63,7 @@ model events {
   @@index([event_date], map: "events_event_date_index")
   @@index([status, event_date(sort: Desc)], map: "events_status_event_date_index")
   @@index([status], map: "events_status_index")
+  @@index([orientation], map: "events_orientation_index")
 }
 
 model comments {
@@ -69,6 +78,9 @@ model comments {
   is_approved       Boolean             @default(true)
   parent_id         BigInt?             @db.UnsignedBigInt
   mention_name      String?             @db.VarChar(255)
+  /// Warisan basis data bersama (aplikasi Laravel) — tidak dipakai Next.js,
+  /// tapi tetap dideklarasikan supaya schema = migrasi = DB (cek drift di CI).
+  page_id           BigInt?             @db.UnsignedBigInt
   created_at        DateTime?           @db.Timestamp(0)
   updated_at        DateTime?           @db.Timestamp(0)
   comment_reactions comment_reactions[]
@@ -145,35 +157,35 @@ enum events_status {
 // mengalir sendiri.
 
 model public_reports {
-  id            BigInt                @id @default(autoincrement()) @db.UnsignedBigInt
-  title         String                @db.VarChar(255)
+  id             BigInt                @id @default(autoincrement()) @db.UnsignedBigInt
+  title          String                @db.VarChar(255)
   /// Judul & deskripsi Inggris, plus nama tempat — semuanya dirapikan kurator
   /// sebelum verifikasi, bukan dikirim pelapor. Kosong = promosi memakai
   /// perilaku lama (judul ID disalin, deskripsi EN null, lokasi di-geocode).
-  title_en      String?               @db.VarChar(255)
-  description   String                @db.Text
-  description_en String?              @db.Text
+  title_en       String?               @db.VarChar(255)
+  description    String                @db.Text
+  description_en String?               @db.Text
   /// Nama tempat pilihan kurator. Kosong = promosi me-reverse-geocode sendiri
   /// dari koordinat, seperti sebelumnya.
-  location      String?               @db.VarChar(255)
+  location       String?               @db.VarChar(255)
   /// Lampiran: [{ path, type: "image" | "video" }] — bentuknya sama persis
   /// dengan events.media, jadi bacaBerkasMedia() dipakai bersama.
-  media         Json?
+  media          Json?
   /// null = pelapor memilih anonim. Kolomnya kosong, bukan diisi "Anonim":
   /// nama "Anonim" tidak bisa dibedakan dari orang yang memang mengetik itu.
-  reporter_name String?               @db.VarChar(255)
+  reporter_name  String?               @db.VarChar(255)
   /// Keduanya opsional dan selalu berpasangan — lihat simpanLaporanPublik().
-  location_lat  Decimal?              @db.Decimal(10, 7)
-  location_lng  Decimal?              @db.Decimal(10, 7)
-  status        public_reports_status @default(pending)
+  location_lat   Decimal?              @db.Decimal(10, 7)
+  location_lng   Decimal?              @db.Decimal(10, 7)
+  status         public_reports_status @default(pending)
   /// Keadaan tayang yang dituju kejadian hasil promosi — bukan status laporan.
-  event_status  events_status         @default(published)
-  ip_address    String?               @db.VarChar(45)
-  reviewed_by   BigInt?               @db.UnsignedBigInt
-  reviewed_at   DateTime?             @db.Timestamp(0)
-  created_at    DateTime?             @db.Timestamp(0)
-  updated_at    DateTime?             @db.Timestamp(0)
-  peninjau      users?                @relation(fields: [reviewed_by], references: [id], onDelete: SetNull, onUpdate: NoAction, map: "public_reports_reviewed_by_foreign")
+  event_status   events_status         @default(published)
+  ip_address     String?               @db.VarChar(45)
+  reviewed_by    BigInt?               @db.UnsignedBigInt
+  reviewed_at    DateTime?             @db.Timestamp(0)
+  created_at     DateTime?             @db.Timestamp(0)
+  updated_at     DateTime?             @db.Timestamp(0)
+  peninjau       users?                @relation(fields: [reviewed_by], references: [id], onDelete: SetNull, onUpdate: NoAction, map: "public_reports_reviewed_by_foreign")
 
   @@index([status, created_at], map: "public_reports_status_created_at_index")
   @@index([reviewed_by], map: "public_reports_reviewed_by_foreign")
@@ -195,4 +207,22 @@ model sorotan_statistik {
   /// { id: [{ nilai, keterangan }], en: [{ nilai, keterangan }] }
   kartu      Json?
   updated_at DateTime? @db.Timestamp(0)
+}
+
+/// Passkey (WebAuthn) untuk masuk CMS dengan sidik jari / wajah. Biometriknya
+/// tidak pernah sampai ke server — perangkat memverifikasi, lalu menandatangani
+/// tantangan dengan kunci privat yang tak keluar dari perangkat. Yang disimpan
+/// cuma kunci publiknya. Tabel milik CMS ini.
+model passkeys {
+  /// ID kredensial (base64url) dari authenticator.
+  id           String    @id @db.VarChar(255)
+  user_id      BigInt    @db.UnsignedBigInt
+  public_key   Bytes     @db.Blob
+  counter      BigInt    @default(0) @db.UnsignedBigInt
+  transports   String?   @db.VarChar(255)
+  created_at   DateTime  @default(now()) @db.Timestamp(0)
+  last_used_at DateTime? @db.Timestamp(0)
+  users        users     @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "passkeys_user_id_foreign")
+
+  @@index([user_id], map: "passkeys_user_id_foreign")
 }

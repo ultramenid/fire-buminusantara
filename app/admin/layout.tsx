@@ -1,26 +1,13 @@
 import type { Metadata } from "next";
-import Link from "next/link";
-import { IBM_Plex_Mono, IBM_Plex_Sans, IBM_Plex_Sans_Condensed } from "next/font/google";
 import { bacaSesi } from "@/lib/sesi";
 import { hitungTunggakan } from "@/lib/tunggakan";
 import { MenuAdmin, MenuAdminAtas } from "./menu-admin";
 import { TunggakanHidup } from "./tunggakan-hidup";
-import { keluar } from "./aksi-sesi";
+import { Toaster } from "./toaster";
+import { Penjaga } from "./penjaga";
+import { Palet } from "./palet";
+import { Pintasan } from "./ruang-klien";
 import "./cms.css";
-
-/* Poppins ditinggal di panggung publik. CMS ini alat baca-tulis data, dan
-   Plex dipilih justru karena tiga peran huruf yang dibutuhkannya datang dari
-   satu keluarga: padat untuk label papan jaga, biasa untuk badan tulisan,
-   monospace untuk angka yang harus sejajar antar baris. */
-const padat = IBM_Plex_Sans_Condensed({
-  subsets: ["latin"], weight: ["600", "700"], variable: "--huruf-padat",
-});
-const badan = IBM_Plex_Sans({
-  subsets: ["latin"], weight: ["400", "500", "600"],
-});
-const mono = IBM_Plex_Mono({
-  subsets: ["latin"], weight: ["400", "500"], variable: "--huruf-mono",
-});
 
 // instant = false: disengaja — seluruh CMS bergerbang sesi.
 //
@@ -44,91 +31,30 @@ export const metadata: Metadata = {
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   const sesi = await bacaSesi();
 
-  // Halaman masuk ikut berada di bawah /admin, jadi ia juga melewati layout ini.
-  // Tanpa sesi, kerangkanya tidak dipasang: pintu masuk tidak boleh memamerkan
-  // menu yang belum boleh dibuka.
+  // Halaman masuk ikut berada di bawah /admin. Tanpa sesi, kerangkanya tidak
+  // dipasang: pintu masuk tidak boleh memamerkan menu yang belum boleh dibuka.
   if (!sesi) {
-    return <div className={`cms ${badan.className} ${padat.variable} ${mono.variable}`}>{children}</div>;
+    return <div className="cms min-h-screen">{children}<Toaster /></div>;
   }
 
-  // Angka yang menunggu dikerjakan ditulis di menunya sendiri; itulah hitungan
-  // yang perlu dilihat editor sebelum memilih halaman. Nilai ini cuma titik
-  // awal: TunggakanHidup menyambungkannya ke aliran SSE, jadi lencananya ikut
-  // berubah tanpa navigasi begitu laporan atau komentar baru masuk.
+  // Titik awal angka tunggakan; TunggakanHidup menyambungkannya ke aliran SSE.
   const tunggakan = await hitungTunggakan();
 
+  // Satu jendela setinggi layar, seperti aplikasi desktop: halaman tidak
+  // bergulir — <main> dan panel di dalamnya yang bergulir sendiri.
   return (
-    <div className={`cms ${badan.className} ${padat.variable} ${mono.variable} min-h-screen`}>
-      {/* Penyedia angka hidup untuk kedua salinan menu — lebar dan sempit. */}
+    <div className="cms h-dvh overflow-hidden">
       <TunggakanHidup awal={tunggakan}>
-      <div className="flex min-h-screen flex-col lg:flex-row">
-        {/* Tulang punggung — tetap di tempat selama isinya digulir. */}
-        <aside className="cms-punggung sticky top-0 z-20 hidden w-[236px] shrink-0 flex-col
-                          self-start lg:flex lg:h-screen">
-          <Kop />
-          <div className="mt-6 flex-1">
-            <MenuAdmin tunggakan={tunggakan} peran={sesi.peran} />
-          </div>
-          <Kaki nama={sesi.nama} peran={sesi.peran} />
-        </aside>
-
-        {/* Kerangka sempit: kepala tetap di atas, menunya digulir mendatar. */}
-        <div className="cms-punggung sticky top-0 z-20 lg:hidden">
-          <div className="flex items-center justify-between gap-3 px-4 py-3">
-            <Kop rapat />
-            <div className="flex items-center gap-3">
-              <span className="cms-angka text-[12px] text-[#a8a79c]">{sesi.nama}</span>
-              <TombolKeluar />
-            </div>
-          </div>
+        <div className="flex h-full flex-col lg:flex-row">
+          <MenuAdmin tunggakan={tunggakan} peran={sesi.peran} nama={sesi.nama} />
           <MenuAdminAtas tunggakan={tunggakan} peran={sesi.peran} />
+          <main className="min-h-0 min-w-0 flex-1 overflow-y-auto">{children}</main>
         </div>
-
-        <main className="min-w-0 flex-1">{children}</main>
-      </div>
       </TunggakanHidup>
+      <Palet peran={sesi.peran} />
+      <Penjaga />
+      <Pintasan />
+      <Toaster />
     </div>
-  );
-}
-
-function Kop({ rapat = false }: { rapat?: boolean }) {
-  return (
-    <Link href="/admin" className={`block ${rapat ? "" : "border-b border-white/10 px-4 py-5"}`}>
-      <span className="cms-judul block text-[19px] leading-none text-white">
-        Pasopati<span className="text-[var(--api)]">.</span>Fire
-      </span>
-      {!rapat && (
-        <span className="cms-mata mt-2 block text-[#78776d]">Meja jaga karhutla</span>
-      )}
-    </Link>
-  );
-}
-
-function Kaki({ nama, peran }: { nama: string; peran: string }) {
-  return (
-    <div className="border-t border-white/10 px-4 py-4">
-      <p className="text-[13px] font-medium text-[#e8e7de]">{nama}</p>
-      <p className="cms-mata mt-0.5 text-[#78776d]">{peran}</p>
-      <div className="mt-3 flex flex-wrap gap-2">
-        <a href="/" target="_blank" rel="noreferrer"
-           className="cms-mata text-[#a8a79c] underline-offset-4 hover:text-white hover:underline">
-          Lihat situs ↗
-        </a>
-      </div>
-      <div className="mt-3">
-        <TombolKeluar lebar />
-      </div>
-    </div>
-  );
-}
-
-function TombolKeluar({ lebar = false }: { lebar?: boolean }) {
-  return (
-    <form action={keluar}>
-      <button type="submit"
-              className={`cms-tombol cms-tombol--sunyi cms-tombol--kecil ${lebar ? "w-full" : ""}`}>
-        Keluar
-      </button>
-    </form>
   );
 }

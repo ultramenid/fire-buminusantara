@@ -90,6 +90,11 @@ const nextConfig: NextConfig = {
     proxyClientMaxBodySize: "101mb",
   },
 
+  // Reaksi dulu di bawah /admin/komentar; kini bagian itu punya layout daftar sendiri.
+  async redirects() {
+    return [{ source: "/admin/komentar/reaksi", destination: "/admin/reaksi", permanent: true }];
+  },
+
   async headers() {
     return [
       // /media melayani berkas UNGGAHAN orang luar — CSP-nya lebih keras:

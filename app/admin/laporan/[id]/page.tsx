@@ -6,8 +6,9 @@ import {
   type Lampiran, type StatusLaporan,
 } from "@/lib/laporan-publik";
 import { peringatanLokasi } from "@/lib/provinsi-titik";
-import { HALAMAN, KopHalaman } from "../../kop-halaman";
-import { Segarkan } from "../../segarkan";
+import { BilahAksi, Hampa, Kartu, KopPanel, LEBAR } from "../../ruang";
+import { bacaSaring } from "../../saring";
+import { Ikon } from "../../menu-admin";
 import { TombolVerifikasi } from "../tombol-verifikasi";
 import { PilihOrientasi } from "../pilih-orientasi";
 import { TombolUrutanLampiran } from "../tombol-urutan";
@@ -19,17 +20,12 @@ const waktuPanjang = new Intl.DateTimeFormat("id-ID", {
 });
 
 const CAP: Record<StatusLaporan, string> = {
-  pending: "cms-cap cms-cap--perhatian",
-  approved: "cms-cap cms-cap--aman",
-  rejected: "cms-cap cms-cap--diam",
+  pending: "cms-cap cms-cap--titik cms-cap--perhatian",
+  approved: "cms-cap cms-cap--titik cms-cap--aman",
+  rejected: "cms-cap cms-cap--titik cms-cap--diam",
 };
 
-export default async function RincianLaporan({
-  params, searchParams,
-}: {
-  params: Promise<{ id: string }>;
-  searchParams: Promise<{ status?: string }>;
-}) {
+export default async function RincianLaporan({ params }: { params: Promise<{ id: string }> }) {
   const sesi = await wajibSesi();
 
   const id = Number((await params).id);
@@ -38,14 +34,11 @@ export default async function RincianLaporan({
   const laporan = await ambilLaporan(id);
   if (!laporan) notFound();
 
-  // Saringan yang sedang dilihat dibawa lewat query, jadi tombol kembali
-  // mendarat di tab yang sama — bukan melempar peninjau balik ke "Menunggu"
-  // setelah ia sedang menelusuri arsip yang ditolak.
-  const asal = (await searchParams).status ?? "pending";
-  const saringan: StatusLaporan | undefined = adaStatus(asal) ? asal : undefined;
-  const berikutnya = await laporanBerikutnya(id, saringan);
-
-  const kembali = `/admin/laporan?status=${asal}`;
+  // Laporan berikutnya dalam saringan tabel yang sama — dibuka sesudah
+  // memutuskan, supaya antrean dikerjakan tanpa bolak-balik ke tabel.
+  const pilihan = (await bacaSaring("laporan")).status || "pending";
+  const idBerikut = await laporanBerikutnya(id, adaStatus(pilihan) ? pilihan : undefined);
+  const berikutnya = idBerikut ? `/admin/laporan/${idBerikut}` : null;
 
   // Kewajaran lokasi dicek untuk SEMUA laporan yang dibuka — pola galat "S
   // tertinggal ketik" hanya terlihat di sini, sebelum promosi mengunci
@@ -57,28 +50,30 @@ export default async function RincianLaporan({
   );
 
   return (
-    <div className={HALAMAN}>
-      <Link href={kembali} className="cms-mata mb-4 inline-block underline-offset-4 hover:underline">
-        ← Laporan warga
-      </Link>
+    <>
+      <KopPanel lebar mata={`Laporan #${String(laporan.id).padStart(3, "0")}`} judul={laporan.judul} kembali="/admin/laporan"
+                sisi={<span className={CAP[laporan.status]}>{NAMA_STATUS[laporan.status]}</span>}>
+        {berikutnya && (
+          <Link href={berikutnya} className="cms-tombol cms-tombol--hantu cms-tombol--kecil">
+            Berikutnya <Ikon nama="kanan" className="size-3.5" />
+          </Link>
+        )}
+      </KopPanel>
 
-      <KopHalaman
-        mata={`Laporan ${String(laporan.id).padStart(3, "0")}`}
-        judul={laporan.judul}
-        asli
-      >
-        <TombolVerifikasi
-          id={laporan.id}
-          status={laporan.status}
-          bolehHapus={sesi.peran === "admin"}
-          setelahHapus={kembali}
-        />
-        <Segarkan />
-      </KopHalaman>
+      {/* Keputusan di puncak, tetap terlihat: inilah alasan halaman ini dibuka. */}
+      <BilahAksi lebar>
+        <TombolVerifikasi id={laporan.id} status={laporan.status} bolehHapus={sesi.peran === "admin"} berikutnya={berikutnya} />
+        <p className="ml-auto hidden text-[12.5px] text-[var(--lirih)] md:block">
+          {laporan.status === "pending"
+            ? "Verifikasi membuat kejadiannya dari nilai di bawah."
+            : "Sudah diputuskan — kembalikan ke antrean untuk mengubahnya."}
+        </p>
+      </BilahAksi>
 
-      <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_260px]">
-        <div className="min-w-0">
-          <Bagian judul="Isi laporan">
+      <div className={`${LEBAR} grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_300px]`}>
+        <div className="grid min-w-0 gap-5">
+          <Kartu judul="Isi laporan"
+                 deskripsi={laporan.status === "pending" ? "Rapikan seperlunya — nilai inilah yang naik jadi kejadian saat diverifikasi." : undefined}>
             <SuntingLaporan
               id={laporan.id}
               judul={laporan.judul}
@@ -92,13 +87,13 @@ export default async function RincianLaporan({
               diperbarui={laporan.diperbarui ? waktuPanjang.format(laporan.diperbarui) : null}
               terkunci={laporan.status !== "pending"}
             />
-          </Bagian>
+          </Kartu>
 
-          <Bagian judul={`Lampiran (${laporan.lampiran.length})`}>
+          <Kartu judul={`Lampiran (${laporan.lampiran.length})`}
+                 deskripsi={laporan.lampiran.length ? "Tekan gambar untuk membuka berkas aslinya, ukuran penuh." : undefined}
+                 isi={laporan.lampiran.length ? "cms-kartu__isi" : ""}>
             {laporan.lampiran.length === 0 ? (
-              <p className="text-[13.5px] text-[var(--lirih)]">
-                Pelapor tidak melampirkan foto atau video.
-              </p>
+              <Hampa ikon="gambar">Pelapor tidak melampirkan foto atau video.</Hampa>
             ) : (
               <LampiranPenuh
                 id={laporan.id}
@@ -107,98 +102,64 @@ export default async function RincianLaporan({
                 terkunci={laporan.status !== "pending"}
               />
             )}
-          </Bagian>
+          </Kartu>
         </div>
 
         {/* Keterangan duduk di kolom sendiri: saat memutuskan, yang dibaca
             berulang adalah lampiran dan ceritanya — data ini cukup ada di
             pinggir, tidak perlu memotong bacaan di tengah. */}
-        <aside className="lg:border-l lg:border-[var(--garis)] lg:pl-7">
-          <Bagian judul="Keterangan">
-            <dl className="grid gap-3.5">
-              <Baris label="Status">
-                <span className={CAP[laporan.status]}>{NAMA_STATUS[laporan.status]}</span>
-              </Baris>
+        <aside className="grid gap-5 lg:sticky lg:top-[124px]">
+          {peringatan !== null && (
+            <div className="cms-kartu cms-kartu--bahaya p-4">
+              <p className="flex items-center gap-1.5 text-[13px] font-semibold text-[var(--bara)]">
+                <Ikon nama="peta" className="size-3.5" />Periksa lokasi
+              </p>
+              <p className="mt-1.5 text-[13px] leading-[1.55] text-[var(--redup)]">{peringatan}</p>
+            </div>
+          )}
 
-              <Baris label="Pelapor">
-                {laporan.namaPelapor ?? (
-                  <span className="text-[var(--lirih)] italic">Anonim</span>
-                )}
-              </Baris>
-
-              <Baris label="Dikirim">
-                <span className="cms-angka">
-                  {laporan.dibuat ? waktuPanjang.format(laporan.dibuat) : "—"}
-                </span>
-              </Baris>
-
-              <Baris label="Koordinat">
-                {laporan.lat !== null && laporan.lng !== null ? (
-                  <a href={`https://www.google.com/maps?q=${laporan.lat},${laporan.lng}`}
-                     target="_blank" rel="noreferrer"
-                     className="cms-angka underline-offset-4 hover:underline">
-                    {laporan.lat.toFixed(7)}, {laporan.lng.toFixed(7)} ↗
-                  </a>
-                ) : (
-                  <span className="text-[var(--lirih)]">Tidak diisi</span>
-                )}
-              </Baris>
-
-              <Baris label="Alamat IP">
-                <span className="cms-angka">{laporan.ip ?? "—"}</span>
-              </Baris>
-
-              {peringatan !== null && (
-                <div className="cms-baris cms-baris--perhatian p-3">
-                  <p className="cms-cap cms-cap--perhatian">Periksa lokasi</p>
-                  <p className="mt-1.5 text-[13px] leading-[1.55] text-[var(--redup)]">
-                    {peringatan}
-                  </p>
+          <Kartu judul="Keterangan">
+            <dl className="cms-dl">
+              <div>
+                <dt>Pelapor</dt>
+                <dd>{laporan.namaPelapor ?? <span className="text-[var(--lirih)] italic">Anonim</span>}</dd>
+              </div>
+              <div>
+                <dt>Dikirim</dt>
+                <dd className="tabular-nums">{laporan.dibuat ? waktuPanjang.format(laporan.dibuat) : "—"}</dd>
+              </div>
+              <div>
+                <dt>Koordinat</dt>
+                <dd>
+                  {laporan.lat !== null && laporan.lng !== null ? (
+                    <a href={`https://www.google.com/maps?q=${laporan.lat},${laporan.lng}`}
+                       target="_blank" rel="noreferrer"
+                       className="cms-angka underline-offset-4 hover:underline">
+                      {laporan.lat.toFixed(6)}, {laporan.lng.toFixed(6)} ↗
+                    </a>
+                  ) : (
+                    <span className="text-[var(--lirih)]">Tidak diisi</span>
+                  )}
+                </dd>
+              </div>
+              <div>
+                <dt>Alamat IP</dt>
+                <dd className="cms-angka">{laporan.ip ?? "—"}</dd>
+              </div>
+              {laporan.status !== "pending" && (
+                <div>
+                  <dt>Ditinjau</dt>
+                  <dd>
+                    <span className="tabular-nums">{laporan.ditinjau ? waktuPanjang.format(laporan.ditinjau) : "—"}</span>
+                    {laporan.peninjau && <span className="mt-0.5 block text-[var(--redup)]">oleh {laporan.peninjau}</span>}
+                  </dd>
                 </div>
               )}
-
-              {laporan.status !== "pending" && (
-                <Baris label="Ditinjau">
-                  <span className="cms-angka">
-                    {laporan.ditinjau ? waktuPanjang.format(laporan.ditinjau) : "—"}
-                  </span>
-                  {laporan.peninjau && (
-                    <span className="mt-0.5 block text-[var(--redup)]">
-                      oleh {laporan.peninjau}
-                    </span>
-                  )}
-                </Baris>
-              )}
             </dl>
-          </Bagian>
-
-          {berikutnya !== null && (
-            <Link href={`/admin/laporan/${berikutnya}?status=${asal}`}
-                  className="cms-tombol cms-tombol--garis mt-2 w-full justify-center">
-              Laporan berikutnya →
-            </Link>
-          )}
+          </Kartu>
         </aside>
       </div>
-    </div>
-  );
-}
-
-function Bagian({ judul, children }: { judul: string; children: React.ReactNode }) {
-  return (
-    <section className="mb-8 last:mb-0">
-      <h2 className="cms-mata mb-3 border-b border-[var(--garis)] pb-2">{judul}</h2>
-      {children}
-    </section>
-  );
-}
-
-function Baris({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div>
-      <dt className="cms-mata text-[var(--lirih)]">{label}</dt>
-      <dd className="mt-1 text-[13.5px] text-[var(--jelaga)]">{children}</dd>
-    </div>
+    </>
   );
 }
 
@@ -225,8 +186,10 @@ function LampiranPenuh({
       {daftar.map((m, i) => (
         <li key={m.url}>
           <div className="mb-2 flex flex-wrap items-center gap-2">
-            {/* Orientasi dipilih peninjau: potret atau lanskap. */}
-            <PilihOrientasi id={id} url={m.url} nilai={m.orientasi} />
+            {/* Orientasi dipilih peninjau: potret atau lanskap. Terkunci =
+                sudah diputuskan: mengubahnya hanya mengubah arsip laporan,
+                kejadian yang sudah lahir tidak ikut. */}
+            {!terkunci && <PilihOrientasi id={id} url={m.url} nilai={m.orientasi} />}
             {!terkunci && daftar.length > 1 && (
               <TombolUrutanLampiran id={id} url={m.url} indeks={i} total={daftar.length} />
             )}
@@ -237,11 +200,11 @@ function LampiranPenuh({
                className="block w-fit focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--api)]">
               {/* eslint-disable-next-line @next/next/no-img-element -- URL media remote warisan, host dinamis di luar remotePatterns */}
               <img src={m.url} alt={m.keterangan || `Lampiran ${i + 1} — ${judul}`} loading="lazy"
-                   className="max-h-[70svh] w-auto max-w-full rounded-[3px] border border-[var(--garis)]" />
+                   className="max-h-[70svh] w-auto max-w-full rounded-[var(--jari)] border border-[var(--garis)]" />
             </a>
           ) : (
             <video src={m.url} controls preload="metadata"
-                   className="max-h-[70svh] w-full max-w-full rounded-[3px] border border-[var(--garis)] bg-black" />
+                   className="max-h-[70svh] w-full max-w-full rounded-[var(--jari)] border border-[var(--garis)] bg-black" />
           )}
           <p className="cms-mata mt-1.5 text-[var(--lirih)]">
             {m.jenis === "gambar" ? "Gambar" : "Video"} {i + 1}

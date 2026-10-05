@@ -1,4 +1,4 @@
-import { prisma } from "./prisma";
+import { prisma } from "./prisma.ts";
 
 /** Jenis konten yang dikomentari di /fire. */
 export const TIPE = "App\\Models\\Event";
@@ -33,13 +33,9 @@ export type HasilKomentarModerasi = {
   total: number;
 };
 
-/** Daftar komentar pada kejadian, bisa difilter dan dipaginasi. */
-export async function daftarKomentarModerasi(
-  syarat: SyaratKomentar,
-  halaman = 1,
-  perHalaman = 15,
-): Promise<HasilKomentarModerasi> {
-  const where = {
+/** Syarat saringan → where Prisma. Dipakai daftar dan "komentar berikutnya". */
+export function whereKomentar(syarat: SyaratKomentar) {
+  return {
     commentable_type: TIPE,
     ...(syarat.status === "belum" ? { is_approved: false } : {}),
     ...(syarat.status === "disetujui" ? { is_approved: true } : {}),
@@ -48,12 +44,22 @@ export async function daftarKomentarModerasi(
       ? { OR: [{ name: { contains: syarat.cari } }, { body: { contains: syarat.cari } }] }
       : {}),
   };
+}
+
+/** Daftar komentar pada kejadian, bisa difilter, diurutkan, dan dipaginasi. */
+export async function daftarKomentarModerasi(
+  syarat: SyaratKomentar,
+  halaman = 1,
+  perHalaman = 15,
+  urut: { kolom: "created_at" | "name"; arah: "asc" | "desc" } = { kolom: "created_at", arah: "desc" },
+): Promise<HasilKomentarModerasi> {
+  const where = whereKomentar(syarat);
 
   const [total, baris] = await Promise.all([
     prisma.comments.count({ where }),
     prisma.comments.findMany({
       where,
-      orderBy: { created_at: "desc" },
+      orderBy: [{ [urut.kolom]: urut.arah }, { id: "desc" }],
       skip: (halaman - 1) * perHalaman,
       take: perHalaman,
       select: PILIH,

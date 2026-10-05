@@ -1,6 +1,9 @@
+import { createHash } from "node:crypto";
+import { cache } from "react";
 import { SignJWT, jwtVerify } from "jose";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
+import { prisma } from "./prisma";
 
 const NAMA_COOKIE = "fire_sesi";
 const UMUR = 60 * 60 * 8; // 8 jam
@@ -22,7 +25,8 @@ export type Sesi = { id: number; nama: string; peran: string };
  * cukup tabel users — jadi akun dan kata sandinya tetap satu.
  */
 export async function buatSesi(sesi: Sesi) {
-  const token = await new SignJWT({ ...sesi })
+  const akun = await prisma.users.findUnique({ where: { id: sesi.id }, select: { password: true } });
+  const token = await new SignJWT({ ...sesi, sv: sidikSandi(akun?.password) })
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
     .setExpirationTime(`${UMUR}s`)
@@ -37,16 +41,37 @@ export async function buatSesi(sesi: Sesi) {
   });
 }
 
-export async function bacaSesi(): Promise<Sesi | null> {
+/** Sidik kata sandi di dalam token: setel ulang sandi = semua sesi lama
+ *  akun itu gugur. Hash dari hash — tokennya tidak membawa potongan bcrypt. */
+function sidikSandi(hash: string | null | undefined): string {
+  return createHash("sha256").update(hash ?? "").digest("hex").slice(0, 16);
+}
+
+/**
+ * Tanda tangan JWT saja tidak cukup: akun bisa dihapus, diturunkan perannya,
+ * atau disetel ulang sandinya dari /admin/pengguna. Karena itu tiap
+ * permintaan mencocokkan token ke baris users (satu baca PK, di-dedupe per
+ * render oleh cache()) — perubahannya berlaku saat itu juga, bukan setelah
+ * token 8 jam habis. Nama & peran diambil dari DB, bukan dari token.
+ */
+export const bacaSesi = cache(async (): Promise<Sesi | null> => {
   const token = (await cookies()).get(NAMA_COOKIE)?.value;
   if (!token) return null;
+  let payload;
   try {
-    const { payload } = await jwtVerify(token, kunci());
-    return { id: Number(payload.id), nama: String(payload.nama), peran: String(payload.peran) };
+    ({ payload } = await jwtVerify(token, kunci()));
   } catch {
     return null; // kedaluwarsa atau tanda tangannya tidak cocok
   }
-}
+  const id = Number(payload.id);
+  if (!Number.isSafeInteger(id) || id <= 0) return null;
+  const akun = await prisma.users.findUnique({
+    where: { id },
+    select: { name: true, role: true, password: true },
+  });
+  if (!akun || !bolehKelola(akun.role) || payload.sv !== sidikSandi(akun.password)) return null;
+  return { id, nama: akun.name, peran: akun.role };
+});
 
 export async function hapusSesi() {
   (await cookies()).delete({ name: NAMA_COOKIE, path: "/" });

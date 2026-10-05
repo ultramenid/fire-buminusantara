@@ -112,7 +112,8 @@ export function PetaLokasi({ lat, lng, onPilih }: Props) {
           attributionControl: { compact: true },
         });
       } catch (e) {
-        if (!batal) setGagal(`Peta tidak bisa dipasang (${e instanceof Error ? e.message : "galat tak dikenal"}). Isi koordinat manual di bawah.`);
+        console.error("[PetaLokasi]", e);
+        if (!batal) setGagal("Peta tidak bisa dipasang. Isi koordinat manual di bawah.");
         return;
       }
       petaRef.current = peta;
@@ -234,7 +235,7 @@ export function PetaLokasi({ lat, lng, onPilih }: Props) {
   return (
     /* isolate: z-index panel peta (ratusan) tidak boleh lolos keluar dan
        menutupi menu & bilah aksi sticky milik CMS. */
-    <div className="isolate relative h-[320px] w-full overflow-hidden rounded-[3px] border border-[var(--garis-tegas)] bg-[var(--papan)]">
+    <div className="isolate relative h-[320px] w-full overflow-hidden rounded-[var(--jari)] border border-[var(--garis-tegas)] bg-[var(--papan)]">
       {gagal ? (
         <div className="grid h-full place-items-center p-6 text-center">
           <div>

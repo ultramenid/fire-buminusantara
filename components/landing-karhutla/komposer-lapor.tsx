@@ -3,9 +3,11 @@
 import { useActionState, useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Switch } from "@/components/ui/switch";
-import { BATAS_BERKAS, BATAS_TOTAL_BYTE } from "@/lib/batas-laporan";
-import type { Bahasa } from "@/lib/bahasa";
-import { kirimLaporan, type KeadaanLapor } from "@/app/[locale]/lapor/aksi";
+import { BATAS_BERKAS, BATAS_TOTAL_BYTE, koordinat, ukuranTeks } from "@/lib/batas-laporan";
+import { BilahUnggah } from "@/components/bilah-unggah";
+import { ambilPosisi, izinDitolak } from "@/lib/posisi-gps";
+import { galatServerLapor, type Bahasa } from "@/lib/bahasa";
+import { kirimLaporan, mintaTiketLapor, type KeadaanLapor } from "@/app/[locale]/lapor/aksi";
 import { bacaDraf, simpanDraf } from "@/lib/draf-lapor";
 import { IkonFoto, IkonVideo, IkonPin, IkonOrang } from "./ikon";
 import { TEKS } from "./teks";
@@ -89,6 +91,16 @@ export function KomposerLapor({ bahasa }: { bahasa: Bahasa }) {
   const sedangKirimRef = useRef(false);
   const formRef = useRef<HTMLFormElement | null>(null);
   const penungguToken = useRef<((tiba: boolean) => void)[]>([]);
+  // Kiriman yang ditahan menunggu token dilepas SETELAH render yang memuat
+  // token: requestSubmit langsung dari callback masih memakai onSubmit lama
+  // (menungguToken=true) dan input captcha yang kosong, jadi tertolak diam-diam.
+  const kirimTertundaRef = useRef(false);
+  useEffect(() => {
+    if (kirimTertundaRef.current && !menungguToken && captchaToken) {
+      kirimTertundaRef.current = false;
+      formRef.current?.requestSubmit();
+    }
+  }, [menungguToken, captchaToken]);
   const urlRef = useRef<string[]>([]);
   const lokasiAktifRef = useRef(true);
   useEffect(() => {
@@ -115,6 +127,16 @@ export function KomposerLapor({ bahasa }: { bahasa: Bahasa }) {
   const [keadaan, aksi, mengirim] = useActionState<KeadaanLapor, FormData>(
     async (sebelumnya: KeadaanLapor, data: FormData) => {
       try {
+        // Token captcha ditukar tiket lebih dulu, lewat permintaan kecil:
+        // token hanya hidup 5 menit, unggahan di sinyal lemah bisa lebih lama.
+        const token = String(data.get("captcha") ?? "");
+        const tiket = await mintaTiketLapor(token);
+        if (!tiket) {
+          ulangCaptcha();
+          return { ok: false, galat: "Verifikasi captcha gagal. Coba lagi.", bidang: "captcha" as const };
+        }
+        data.delete("captcha");
+        data.set("tiket", tiket);
         const hasil = await kirimLaporan(sebelumnya, data);
         if (hasil?.ok) {
           for (const url of urlRef.current) URL.revokeObjectURL(url);
@@ -127,18 +149,38 @@ export function KomposerLapor({ bahasa }: { bahasa: Bahasa }) {
           setLng("");
           setNama("");
           setAnonim(false);
+          // Token sudah terpakai (sekali pakai): buang, supaya laporan kedua
+          // lewat "Tulis lagi" menunggu token baru dari widget yang dipasang ulang.
+          setCaptchaToken("");
           setTerkirim(true);
           router.refresh();
         } else {
           ulangCaptcha();
         }
         return hasil;
+      } catch (e) {
+        // Jaringan putus / server tak menjawab: action melempar, dan tanpa
+        // tangkapan ini useActionState meneruskannya ke error boundary — form
+        // lepas dan semua isian serta berkas hilang.
+        console.error("[kirimLaporan]", e);
+        ulangCaptcha();
+        // Pesan klien (bukan galat server), jadi tidak lewat galatServerLapor.
+        setGalatKlien(t.kirimTerputus);
+        return null;
       } finally {
         sedangKirimRef.current = false;
       }
     },
     null,
   );
+
+  // Galat server menyebut bidangnya: pindahkan fokus ke sana — di ponsel
+  // pelapor sedang di tombol Kirim, jauh dari pesan dan isian yang salah.
+  useEffect(() => {
+    if (!keadaan || keadaan.ok || !keadaan.bidang) return;
+    const id = { judul: "lk-judul", deskripsi: "lk-cerita", berkas: "lk-lampir", koordinat: "lk-lat", captcha: "" }[keadaan.bidang];
+    if (id) document.getElementById(id)?.focus();
+  }, [keadaan]);
 
   const sinkronkanKeInput = useCallback((daftar: File[]) => {
     const input = berkasRef.current;
@@ -175,7 +217,9 @@ export function KomposerLapor({ bahasa }: { bahasa: Bahasa }) {
   // Widget Turnstile dipasang saat komposer mengembang — sama seperti form
   // /lapor: appearance interaction-only, tak terlihat kecuali ditantang.
   useEffect(() => {
-    if (!buka || !SITE_KEY) return;
+    // Tampilan sukses melepas wadah captcha; widget dipasang ulang saat
+    // komposer kembali (terkirim → false), bukan dibiarkan menunjuk wadah mati.
+    if (!buka || !SITE_KEY || terkirim) return;
     let hidup = true;
     const pasang = () => {
       const wadah = captchaRef.current;
@@ -236,7 +280,7 @@ export function KomposerLapor({ bahasa }: { bahasa: Bahasa }) {
         widgetRef.current = null;
       }
     };
-  }, [buka]);
+  }, [buka, terkirim]);
 
   function tambahBerkas(dipilih: FileList | null) {
     if (!dipilih || dipilih.length === 0) return;
@@ -255,10 +299,16 @@ export function KomposerLapor({ bahasa }: { bahasa: Bahasa }) {
     }
     if (gabungan.length > BATAS_BERKAS) {
       setGalatKlien(t.terlaluBanyak);
+      // Peramban sudah mengganti isi <input> dengan pilihan yang ditolak ini;
+      // kembalikan ke daftar yang tampil, kalau tidak yang ditolak ikut terkirim.
+      sinkronkanKeInput(berkas);
       return;
     }
     if (gabungan.reduce((n, b) => n + b.size, 0) > BATAS_TOTAL_BYTE) {
       setGalatKlien(t.terlaluBesar);
+      // Peramban sudah mengganti isi <input> dengan pilihan yang ditolak ini;
+      // kembalikan ke daftar yang tampil, kalau tidak yang ditolak ikut terkirim.
+      sinkronkanKeInput(berkas);
       return;
     }
     const tambahanUrl: Record<string, string> = {};
@@ -301,19 +351,18 @@ export function KomposerLapor({ bahasa }: { bahasa: Bahasa }) {
     }
     setMencariLokasi(true);
     setGalatKlien("");
-    navigator.geolocation.getCurrentPosition(
+    ambilPosisi().then(
       (posisi) => {
         if (!lokasiAktifRef.current) return;
         setMencariLokasi(false);
         setLat(posisi.coords.latitude.toFixed(7));
         setLng(posisi.coords.longitude.toFixed(7));
       },
-      () => {
+      (e) => {
         if (!lokasiAktifRef.current) return;
         setMencariLokasi(false);
-        setGalatKlien(t.lokasiGagal);
+        setGalatKlien(izinDitolak(e) ? t.lokasiDitolak : t.lokasiGagal);
       },
-      { enableHighAccuracy: true, timeout: 10_000 },
     );
   }
 
@@ -341,7 +390,8 @@ export function KomposerLapor({ bahasa }: { bahasa: Bahasa }) {
   );
 }
 
-  const galat = galatKlien || (keadaan && !keadaan.ok ? keadaan.galat : "");
+  const galat = galatKlien ||
+    (keadaan && !keadaan.ok ? galatServerLapor(keadaan.galat, keadaan.bidang, bahasa) : "");
   /* "Ada lokasi" DITURUNKAN dari isi koordinatnya, bukan bendera tersendiri:
      dengan kotak Lat/Lng yang kini sebaris dan terlihat, bendera yang bilang
      "belum ada titik" sementara dua kotak di sebelahnya jelas berisi angka
@@ -433,6 +483,15 @@ export function KomposerLapor({ bahasa }: { bahasa: Bahasa }) {
             if (berkas.length === 0) {
               e.preventDefault();
               setGalatKlien(t.berkasWajib);
+              document.getElementById("lk-lampir")?.focus();
+              return;
+            }
+            // Koordinat salah ketik ditolak di sini, bukan setelah unggahan selesai.
+            const titik = koordinat(lat, lng);
+            if (titik && "galat" in titik) {
+              e.preventDefault();
+              setGalatKlien(titik.galat);
+              document.getElementById("lk-lat")?.focus();
               return;
             }
             if (Boolean(SITE_KEY) && !captchaToken) {
@@ -452,11 +511,11 @@ export function KomposerLapor({ bahasa }: { bahasa: Bahasa }) {
                   setGalatKlien(t.keamananGagal);
                   return;
                 }
-                sedangKirimRef.current = true;
-                formRef.current?.requestSubmit();
+                kirimTertundaRef.current = true;
               });
               return;
             }
+            setGalatKlien("");
             sedangKirimRef.current = true;
           }}
           /* Indentasi sejajar-avatar ala X hanya di panggung. Di ponsel pl-14
@@ -491,6 +550,11 @@ export function KomposerLapor({ bahasa }: { bahasa: Bahasa }) {
               {galat}
             </p>
           )}
+          {/* Peringatan, bukan penghalang: warga tanpa GPS tetap boleh melapor. */}
+          {!galat && !mengirim && !adaLokasi && berkas.length > 0 && (
+            <p className="mt-2 text-[13px] leading-relaxed text-black/60 dark:text-[#a0a0a0]">{t.tanpaLokasi}</p>
+          )}
+          {mengirim && <BilahUnggah className="mt-3" label={t.mengirim} />}
 
           <div ref={captchaRef} />
           <input ref={berkasRef} type="file" name="berkas" multiple accept={DITERIMA}
@@ -585,7 +649,7 @@ export function KomposerLapor({ bahasa }: { bahasa: Bahasa }) {
                     <span className="relative inline-block min-w-0">
                       <button type="button"
                               onClick={() => hapusBerkas(kunci, url)}
-                              aria-label={`${b.name}`}
+                              aria-label={`${t.hapus} ${b.name}`}
                               className="absolute -top-2.5 -right-2.5 z-[3] grid size-7 cursor-pointer place-items-center rounded-full
                                          bg-neutral-800 text-white ring-1 ring-black/20 dark:bg-[#1e1e1e] dark:ring-white/20 transition-colors hover:bg-[#e60012]">
                         <svg viewBox="0 0 20 20" aria-hidden="true" fill="currentColor" className="size-3.5">
@@ -600,7 +664,7 @@ export function KomposerLapor({ bahasa }: { bahasa: Bahasa }) {
                         <img src={url} alt="" className="h-14 w-auto max-w-full rounded-xl bg-black/5 object-contain ring-1 ring-black/10 dark:bg-black dark:ring-white/15" />
                       ) : (
                         <span className="flex h-14 items-center justify-center rounded-xl bg-black/[0.04] px-3 text-[11px] text-black/60 ring-1 ring-black/10 dark:bg-white/5 dark:text-[#a0a0a0] dark:ring-white/15">
-                          {b.type.startsWith("video/") ? "Video" : "Foto"}
+                          {b.type.startsWith("video/") ? t.video : t.foto}
                         </span>
                       )}
                     </span>
@@ -611,7 +675,7 @@ export function KomposerLapor({ bahasa }: { bahasa: Bahasa }) {
           )}
 
           <div className="mt-3 flex items-center gap-1 border-t border-black/[0.08] dark:border-white/10 pt-2">
-            <button type="button" title={t.lampirFoto} aria-label={t.lampirFoto}
+            <button type="button" id="lk-lampir" title={t.lampirFoto} aria-label={t.lampirFoto}
                     onClick={() => berkasRef.current?.click()} className={ikonAksi}>
               <IkonFoto />
             </button>
@@ -623,8 +687,15 @@ export function KomposerLapor({ bahasa }: { bahasa: Bahasa }) {
                 sebagai galat setelah tombol Kirim ditekan. Di ponsel ia
                 disembunyikan, bukan dipotong: baris ini sudah penuh oleh dua
                 ikon + Batal + Kirim, dan "Foto/vid…" bukan keterangan. */}
-            <span className="lk-isian hidden min-w-0 truncate pl-1 text-[12px] whitespace-nowrap text-black/60 dark:text-[#a0a0a0] sm:inline">
+            {/* Hitungan berkas tetap tampil di ponsel ("2/6" pendek); ukuran
+                dan teks syarat yang panjang hanya di layar lebar. */}
+            <span className={`lk-isian min-w-0 truncate pl-1 text-[12px] whitespace-nowrap text-black/60 dark:text-[#a0a0a0] ${
+              berkas.length > 0 ? "inline" : "hidden sm:inline"
+            }`}>
               {berkas.length > 0 ? `${berkas.length}/${BATAS_BERKAS}` : t.wajibMedia}
+              {berkas.length > 0 && (
+                <span className="hidden sm:inline"> · {ukuranTeks(berkas.reduce((n, b) => n + b.size, 0))}</span>
+              )}
             </span>
             <button type="button" onClick={() => setBuka(false)}
                     className="lk-batal ml-auto h-9 cursor-pointer rounded-full px-3.5 text-[14px] text-black/60 transition hover:bg-black/[0.05] hover:text-black dark:text-[#a0a0a0] dark:hover:bg-white/10 dark:hover:text-white

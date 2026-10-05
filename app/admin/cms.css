@@ -1,213 +1,282 @@
 /**
- * Ragam rupa CMS — "papan jaga".
+ * Rupa CMS — rujukan MonoCode (github.com/hardbeat920/monocode).
  *
- * Bukan dasbor kartu-di-atas-abu. Rujukannya papan jaga pos pemantau: tulang
- * punggung gelap di kiri, catatan berbaris di atas kertas, dipisah garis rambut,
- * angka disetel monospace supaya kolom-kolomnya sejajar dan mudah dibaca sekilas.
+ * Alat, bukan terbitan: abu netral, garis rambut dari tinta 7–14%, isian
+ * terpilih berupa RONA tinta (bukan warna baru), satu aksen biru untuk fokus
+ * dan "di sini", huruf sistem, label kalimat biasa. Merah hanya untuk yang
+ * berarti (belum ditinjau, hapus, galat).
  *
- * Situs publiknya terbitan — merah penuh, Poppins, sudut membulat 10-14px.
- * CMS-nya alat: radius 3px, tanpa bayangan melayang, warna dipakai hanya ketika
- * ia BERARTI (belum ditinjau, hapus, aktif). Perbedaan itu disengaja supaya
- * seorang editor tahu ia sedang di balik panggung, bukan di halaman depan.
+ * Tema mengikuti sakelar situs (next-themes → kelas `dark` di <html>). Nama
+ * token lama dipertahankan supaya markup tidak perlu ditulis ulang:
+ *   --jelaga  tinta utama        --kertas  dasar halaman
+ *   --papan   bidang naik        --arang   bidang naik di sidebar
+ *   --garis / --garis-tegas      garis rambut / garis kontrol
+ *   --redup / --lirih            teks kedua / ketiga (≥ 4.5:1 di kedua tema)
+ *   --api / --bara               merah aksen / merah teks
+ *   --hijau / --hijau-naik       hijau "aman" / hover tombol utama
+ *   --limau                      aksen biru (fokus, aktif) — nama warisan
  *
- * Semua di-scope ke .cms: berkas ini diimpor layout admin, jadi tidak boleh
- * bocor ke halaman /fire yang berbagi berkas Tailwind yang sama.
+ * Semua di-scope ke .cms: berkas ini diimpor layout admin dan tidak boleh
+ * bocor ke halaman publik yang berbagi berkas Tailwind yang sama.
  */
 
+/* Lapisan components: utility Tailwind di markup (lebar, warna teks) boleh
+   menimpa kelas di sini — urutan lapisannya dideklarasikan globals.css. */
+@layer components {
+
 .cms {
-  /* Dasar */
-  --jelaga: #16150f;   /* tinta & tulang punggung; hitam bersemu zaitun */
-  --arang: #24231b;    /* bidang naik di dalam tulang punggung */
-  --kertas: #efeee7;   /* dasar halaman */
-  --papan: #faf9f5;    /* baris & bidang isian */
+  --tinta: hsl(240 0% 14%);
+  --jelaga: var(--tinta);
+  --kertas: hsl(240 0% 97%);
+  --papan: #fff;
+  --arang: color-mix(in srgb, var(--tinta) 6%, transparent);
+  --garis: color-mix(in srgb, var(--tinta) 10%, transparent);
+  --garis-tegas: color-mix(in srgb, var(--tinta) 18%, transparent);
+  --redup: color-mix(in srgb, var(--tinta) 76%, var(--kertas));
+  --lirih: color-mix(in srgb, var(--tinta) 64%, var(--kertas));
+  --rona: color-mix(in srgb, var(--tinta) 5%, transparent);
+  --rona-kuat: color-mix(in srgb, var(--tinta) 9%, transparent);
 
-  /* Garis dan teks turunan tinta — ditulis sebagai warna jadi, bukan opacity,
-     supaya tetap sama di atas kertas maupun di atas papan. */
-  --garis: #d8d7cd;
-  --garis-tegas: #bcbbb0;
-  --redup: #6e6d63;
-  --lirih: #8d8c82;
+  --api: #e5484d;
+  --bara: #b4232c;
+  --hijau: #18794e;
+  --hijau-naik: color-mix(in srgb, var(--tinta) 82%, var(--kertas));
+  --limau: hsl(211 92% 48%);
 
-  /* Warna yang berarti */
-  --api: #e60012;
-  --bara: #8f1116;
-  --hijau: #2b5343;
-  --hijau-naik: #386a56;
-  --limau: #bdd142;
-
-  --jari: 3px;
+  --huruf-padat: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --huruf-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  --jari: 6px;
+  /* Bidang besar (kartu, bingkai tabel) sedikit lebih bulat dari kontrol. */
+  --jari-kartu: 10px;
+  /* Kartu di tema terang butuh sedikit angkat supaya terbaca sebagai bidang;
+     di tema gelap garisnya sudah cukup. */
+  --bayang: 0 1px 2px rgb(0 0 0 / 0.04), 0 1px 1px rgb(0 0 0 / 0.02);
 
   background: var(--kertas);
   color: var(--jelaga);
+  font-family: var(--huruf-padat);
   font-size: 14px;
   line-height: 1.5;
+  /* Tulisan pengunjung bisa berupa satu "kata" panjang (asdasd…, URL):
+     tanpa ini barisnya mendorong halaman ponsel bergulir ke samping. */
+  overflow-wrap: break-word;
   -webkit-font-smoothing: antialiased;
+  color-scheme: light;
+  accent-color: var(--limau);
+}
+
+.dark .cms {
+  --tinta: hsl(240 0% 92%);
+  --kertas: hsl(240 0% 9%);
+  --papan: hsl(240 0% 11.5%);
+  --api: #f2555a;
+  --bara: #ff9592;
+  --hijau: #3dd68c;
+  --limau: hsl(211 92% 62%);
+  --bayang: none;
+  color-scheme: dark;
 }
 
 /* ── Tipografi ──────────────────────────────────────────────────────────── */
 
-/* Label kecil berspasi. Satu-satunya hiasan tipografi yang dipakai berulang:
-   ia menandai JENIS data, jadi mata bisa melompat antar blok tanpa membaca. */
+/* Label jenis data: kecil, redup, kalimat biasa — bukan KAPITAL berspasi. */
 .cms-mata {
-  font-family: var(--huruf-padat), sans-serif;
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  color: var(--redup);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--lirih);
 }
 
 .cms-judul {
-  font-family: var(--huruf-padat), sans-serif;
-  font-weight: 700;
-  letter-spacing: 0.02em;
-  text-transform: uppercase;
-  line-height: 1.05;
-}
-
-/* Judul yang isinya tulisan orang — judul kejadian, nama provinsi — memakai
-   huruf yang sama tetapi TANPA dipaksa kapital: itu teks yang diketik editor,
-   dan mengubah bentuknya berarti menampilkan sesuatu yang bukan miliknya. */
-.cms-judul--asli {
-  text-transform: none;
-  letter-spacing: -0.005em;
-}
-
-/* Angka pasti: id, koordinat, hektare, jam. Monospace bertabular supaya
-   digitnya tidak bergoyang saat nilainya berubah. */
-.cms-angka {
-  font-family: var(--huruf-mono), monospace;
-  font-variant-numeric: tabular-nums;
+  font-weight: 600;
   letter-spacing: -0.01em;
+  line-height: 1.2;
 }
 
-/* ── Tulang punggung ────────────────────────────────────────────────────── */
+/* Warisan: judul tulisan orang dulu dikecualikan dari KAPITAL. Kini semua
+   judul sudah apa adanya; kelasnya dibiarkan supaya markup tetap sah. */
+.cms-judul--asli { letter-spacing: -0.01em; }
+
+/* Angka pasti: id, koordinat, hektare, jam — tabular supaya kolom sejajar. */
+.cms-angka {
+  font-family: var(--huruf-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 0.94em;
+}
+
+/* ── Sidebar ────────────────────────────────────────────────────────────── */
 
 .cms-punggung {
-  background: var(--jelaga);
-  color: #e8e7de;
+  background: var(--kertas);
+  color: var(--jelaga);
+  border-color: var(--garis);
 }
 
 .cms-tautan {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 9px 14px 9px 12px;
-  border-left: 3px solid transparent;
-  color: #a8a79c;
-  font-family: var(--huruf-padat), sans-serif;
-  font-size: 15px;
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  transition: color 140ms ease, background-color 140ms ease, border-color 140ms ease;
+  height: 32px;
+  padding: 0 10px;
+  border-radius: var(--jari);
+  color: var(--redup);
+  font-size: 13.5px;
+  font-weight: 500;
+  white-space: nowrap;
+  transition: color 120ms ease, background-color 120ms ease;
 }
 
-.cms-tautan:hover {
-  background: var(--arang);
-  color: #f2f1e8;
-}
+.cms-tautan:hover { background: var(--rona); color: var(--jelaga); }
 
-/* Halaman yang sedang dibuka ditandai batang limau — warna paling terang di
-   tangga peta, dan satu-satunya tempat ia muncul di tulang punggung. */
 .cms-tautan[aria-current="page"] {
-  background: var(--arang);
-  border-left-color: var(--limau);
-  color: #fff;
+  background: var(--rona-kuat);
+  color: var(--jelaga);
+}
+
+.cms-tautan:focus-visible { outline: 2px solid var(--limau); outline-offset: -2px; }
+
+.cms-kelompok {
+  padding: 14px 10px 4px;
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--lirih);
 }
 
 /* ── Baris catatan ──────────────────────────────────────────────────────── */
 
-/* Satu catatan = satu baris beralas papan dengan tepi kiri berwarna keadaan.
-   Tepinya melebar saat disentuh penunjuk: umpan balik tanpa memindahkan apa
-   pun, jadi daftar sepanjang apa pun tetap tenang. */
 .cms-baris {
   position: relative;
   background: var(--papan);
   border: 1px solid var(--garis);
   border-radius: var(--jari);
-  transition: border-color 140ms ease, background-color 140ms ease, box-shadow 140ms ease;
+  transition: border-color 120ms ease, background-color 120ms ease;
 }
 
-.cms-baris:hover {
-  background: #fff;
-  border-color: var(--garis-tegas);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+.cms-baris:hover { border-color: var(--garis-tegas); }
+
+/* Tepi keadaan: titik warna di kiri, bukan batang tebal. */
+.cms-baris--perhatian { box-shadow: inset 2px 0 0 var(--api); }
+.cms-baris--aman { box-shadow: inset 2px 0 0 color-mix(in srgb, var(--hijau) 70%, transparent); }
+
+/* Panel: satu bingkai, isinya dipisah garis — daftar ala MonoCode. */
+.cms-panel {
+  background: var(--papan);
+  border: 1px solid var(--garis);
+  border-radius: var(--jari);
+  overflow: hidden;
 }
+.cms-panel > * + * { border-top: 1px solid var(--garis); }
 
 /* ── Cap keadaan ────────────────────────────────────────────────────────── */
 
-/* Bukan pil berwarna lembut: keadaan moderasi itu keputusan, jadi ditandai
-   seperti cap pada formulir — huruf kecil berspasi di dalam garis tegas. */
 .cms-cap {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  padding: 2px 7px;
-  border: 1px solid currentColor;
-  border-radius: var(--jari);
-  font-family: var(--huruf-padat), sans-serif;
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  line-height: 1.6;
+  padding: 0 7px;
+  height: 20px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
+  background: var(--rona-kuat);
+  color: var(--redup);
 }
 
-.cms-cap--perhatian { color: var(--bara); background: #e6001208; }
-.cms-cap--aman { color: var(--hijau); background: #2b534308; }
-.cms-cap--diam { color: var(--redup); background: #16150f06; }
+.cms-cap--perhatian {
+  color: var(--bara);
+  background: color-mix(in srgb, var(--api) 14%, transparent);
+}
+.cms-cap--aman {
+  color: var(--hijau);
+  background: color-mix(in srgb, var(--hijau) 14%, transparent);
+}
+.cms-cap--diam { color: var(--redup); background: var(--rona-kuat); }
+
+/* Cap keadaan (Tayang, Draft, Menunggu…): titik di depan supaya terbaca
+   sebagai status, bukan label/tag biasa. */
+.cms-cap--titik::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 99px;
+  background: currentColor;
+}
 
 /* ── Isian ──────────────────────────────────────────────────────────────── */
 
-/* Kotak isian tanpa bayangan, garisnya menebal saat difokus. Cincin fokus
-   limau dipakai SELURUH CMS — satu warna fokus, jadi posisi papan tik selalu
-   ketemu di mana pun.
-
-   Lebarnya sengaja TIDAK disetel di sini. Berkas ini tidak berada di dalam
-   @layer, jadi apa pun yang disetelnya mengalahkan utility Tailwind di markup —
-   `w-56` pada satu kolom saringan tidak akan pernah menang atas `width: 100%`.
-   Yang menyangkut tata letak ditinggalkan untuk markup; berkas ini memegang
-   rupa. */
 .cms-isian {
   background: var(--papan);
   border: 1px solid var(--garis-tegas);
   border-radius: var(--jari);
-  padding: 8px 10px;
+  padding: 6px 10px;
+  min-height: 34px;
   font: inherit;
-  font-size: 14px;
+  font-size: 13.5px;
   color: var(--jelaga);
-  transition: border-color 140ms ease, background-color 140ms ease;
+  transition: border-color 120ms ease, box-shadow 120ms ease;
 }
 
 .cms-isian::placeholder { color: var(--lirih); }
-
-.cms-isian:hover { background: #fff; }
+.cms-isian:hover { border-color: color-mix(in srgb, var(--tinta) 28%, transparent); }
 
 .cms-isian:focus-visible,
 .cms-isian:focus {
-  outline: 2px solid var(--limau);
-  outline-offset: 1px;
-  border-color: var(--jelaga);
-  background: #fff;
+  outline: none;
+  border-color: var(--limau);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--limau) 22%, transparent);
 }
 
-.cms-isian[type="file"] { padding: 6px 10px; }
+/* Merah hanya setelah disentuh/dikirim — bukan saat form baru dibuka. */
+.cms-isian:user-invalid {
+  border-color: color-mix(in srgb, var(--api) 70%, transparent);
+}
+.cms-isian:user-invalid:focus {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--api) 20%, transparent);
+}
+
+.cms-isian:disabled { opacity: 0.6; cursor: not-allowed; }
+
+.cms-isian[type="file"] { padding: 5px 8px; }
 
 .cms-isian[type="file"]::file-selector-button {
   margin-right: 10px;
-  padding: 5px 10px;
+  padding: 3px 10px;
   border: 1px solid var(--garis-tegas);
-  border-radius: var(--jari);
-  background: var(--kertas);
+  border-radius: calc(var(--jari) - 2px);
+  background: var(--rona);
   font: inherit;
-  font-size: 13px;
-  font-weight: 600;
+  font-size: 12.5px;
+  font-weight: 500;
   color: var(--jelaga);
   cursor: pointer;
 }
 
 textarea.cms-isian { line-height: 1.55; resize: vertical; }
+
+/* Panah select bawaan tiap peramban berbeda bentuk & jaraknya — ganti satu
+   chevron yang sama dengan ikon CMS lainnya. */
+select.cms-isian {
+  appearance: none;
+  padding-right: 32px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%23737373' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m4 6 4 4 4-4'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  background-size: 14px;
+  cursor: pointer;
+}
+.dark .cms select.cms-isian {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%23a3a3a3' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m4 6 4 4 4-4'/%3E%3C/svg%3E");
+}
+
+/* Label bidang form: satu bentuk untuk semua form CMS. */
+.cms-label-isian {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--jelaga);
+}
 
 /* ── Tombol ─────────────────────────────────────────────────────────────── */
 
@@ -216,26 +285,22 @@ textarea.cms-isian { line-height: 1.55; resize: vertical; }
   align-items: center;
   justify-content: center;
   gap: 7px;
-  padding: 8px 16px;
+  height: 34px;
+  padding: 0 14px;
   border: 1px solid transparent;
   border-radius: var(--jari);
-  font-family: var(--huruf-padat), sans-serif;
-  font-size: 14px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  font-size: 13.5px;
+  font-weight: 500;
+  white-space: nowrap;
   cursor: pointer;
-  transition: background-color 140ms ease, border-color 140ms ease, color 140ms ease;
+  transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
 }
 
-.cms-tombol:focus-visible {
-  outline: 2px solid var(--limau);
-  outline-offset: 2px;
-}
+.cms-tombol:focus-visible { outline: 2px solid var(--limau); outline-offset: 2px; }
+.cms-tombol:disabled { opacity: 0.5; cursor: not-allowed; }
 
-.cms-tombol:disabled { opacity: 0.45; cursor: not-allowed; }
-
-.cms-tombol--utama { background: var(--hijau); color: #fff; }
+/* Utama: isi tinta penuh (terang di tema gelap, gelap di tema terang). */
+.cms-tombol--utama { background: var(--jelaga); color: var(--kertas); }
 .cms-tombol--utama:hover:not(:disabled) { background: var(--hijau-naik); }
 
 .cms-tombol--garis {
@@ -243,100 +308,130 @@ textarea.cms-isian { line-height: 1.55; resize: vertical; }
   border-color: var(--garis-tegas);
   color: var(--jelaga);
 }
-.cms-tombol--garis:hover:not(:disabled) { background: #fff; border-color: var(--jelaga); }
+.cms-tombol--garis:hover:not(:disabled) { background: var(--rona); }
 
-/* Merusak data: garis merah, isi baru muncul saat disentuh — cukup terlihat
-   untuk sengaja dicari, cukup sepi untuk tidak tertekan tanpa niat. */
 .cms-tombol--bahaya {
   background: transparent;
-  border-color: var(--api);
+  border-color: color-mix(in srgb, var(--api) 45%, transparent);
   color: var(--bara);
 }
-.cms-tombol--bahaya:hover:not(:disabled) { background: #e6001210; }
+.cms-tombol--bahaya:hover:not(:disabled) { background: color-mix(in srgb, var(--api) 12%, transparent); }
 
-/* Tekan kedua pada hapus: bentuk yang sama, kini terisi penuh. Perubahan
-   isinya yang menandai bahwa tombol ini sekarang benar-benar akan menghapus. */
-.cms-tombol--bahaya-isi {
-  background: var(--api);
-  border-color: var(--api);
-  color: #fff;
-}
-.cms-tombol--bahaya-isi:hover:not(:disabled) { background: var(--bara); border-color: var(--bara); }
+/* Tekan kedua pada hapus: bentuk sama, kini terisi penuh. */
+.cms-tombol--bahaya-isi { background: var(--api); border-color: var(--api); color: #fff; }
+.cms-tombol--bahaya-isi:hover:not(:disabled) { background: #c93035; border-color: #c93035; }
 
-/* Tombol di dalam tulang punggung gelap. */
-/* HANYA untuk alas gelap (tulang punggung). Warnanya nyaris putih — di atas
-   kertas terang tombolnya hilang sama sekali. Untuk aksi sekunder di halaman,
-   pakai .cms-tombol--redup di bawah. */
-.cms-tombol--sunyi {
-  background: transparent;
-  border-color: #ffffff40;
-  color: #e8e7de;
-}
-.cms-tombol--sunyi:hover:not(:disabled) { background: #ffffff1a; border-color: #ffffff99; color: #fff; }
-
-/* Pasangan --sunyi untuk alas terang: hadir dan terbaca, tapi tidak bersaing
-   perhatian dengan aksi utama di sebelahnya. Dipakai tindakan yang jarang
-   diambil tapi harus selalu tersedia, mis. mengembalikan laporan ke antrean. */
+/* --sunyi dulu khusus sidebar gelap; kini sidebar sewarna halaman, jadi
+   ia sama dengan --redup. */
+.cms-tombol--sunyi,
 .cms-tombol--redup {
   background: transparent;
-  /* Kuietnya datang dari TEPI yang samar, bukan dari teks yang dipudarkan.
-     Teks redup di atas kertas terang hanya sampai rasio 4.48 — di bawah ambang
-     WCAG AA 4.5, dan itu terlihat: tombolnya nyaris hilang. Tintanya penuh,
-     hierarkinya tetap terjaga karena tepinya lebih tipis dari --garis-tegas
-     milik tombol garis biasa. */
   border-color: var(--garis);
   color: var(--jelaga);
 }
-.cms-tombol--redup:hover:not(:disabled) {
-  background: #fff;
-  border-color: var(--garis-tegas);
-  color: var(--jelaga);
+.cms-tombol--sunyi:hover:not(:disabled),
+.cms-tombol--redup:hover:not(:disabled) { background: var(--rona); border-color: var(--garis-tegas); }
+
+.cms-tombol--kecil { height: 28px; padding: 0 10px; font-size: 12.5px; }
+
+/* Hantu: tanpa bingkai, redup. Aksi baris tabel — terbaca saat dicari, tidak
+   berteriak di setiap baris. Baris yang ditunjuk menegaskannya (lihat tabel). */
+.cms-tombol--hantu {
+  background: transparent;
+  color: var(--redup);
+}
+.cms-tombol--hantu:hover:not(:disabled) { background: var(--rona-kuat); color: var(--jelaga); }
+.cms-tombol--hantu-bahaya {
+  background: transparent;
+  color: var(--redup);
+}
+.cms-tombol--hantu-bahaya:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--api) 12%, transparent);
+  color: var(--bara);
 }
 
-.cms-tombol--kecil { padding: 5px 11px; font-size: 12.5px; }
+/* Tombol ikon persegi tanpa bingkai — sidebar, toast, bar atas. */
+.cms-ikon-tombol {
+  display: inline-grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: var(--jari);
+  color: var(--redup);
+  transition: background-color 120ms ease, color 120ms ease;
+}
+.cms-ikon-tombol:hover { background: var(--rona-kuat); color: var(--jelaga); }
+.cms-ikon-tombol:focus-visible { outline: 2px solid var(--limau); outline-offset: -2px; }
 
-/* ── Bidang kosong & galat ──────────────────────────────────────────────── */
+/* ── Bidang kosong, galat, kabar ────────────────────────────────────────── */
 
 .cms-kosong {
   border: 1px dashed var(--garis-tegas);
   border-radius: var(--jari);
-  background: #faf9f580;
-  padding: 44px 24px;
+  padding: 40px 24px;
   text-align: center;
 }
 
-.cms-galat {
+.cms-galat,
+.cms-kabar {
   display: flex;
+  flex-wrap: wrap;
   gap: 10px;
-  border: 1px solid var(--api);
-  border-left-width: 3px;
+  border: 1px solid;
   border-radius: var(--jari);
-  background: #e6001208;
-  padding: 10px 12px;
-  color: var(--bara);
+  padding: 9px 12px;
   font-size: 13.5px;
 }
+.cms-galat {
+  border-color: color-mix(in srgb, var(--api) 40%, transparent);
+  background: color-mix(in srgb, var(--api) 9%, transparent);
+  color: var(--bara);
+}
+.cms-kabar {
+  border-color: color-mix(in srgb, var(--hijau) 40%, transparent);
+  background: color-mix(in srgb, var(--hijau) 9%, transparent);
+  color: var(--hijau);
+}
 
-/* ── Kerangka memuat (Skeleton) ─────────────────────────────────────────── */
+/* ── Toast ──────────────────────────────────────────────────────────────── */
+
+.cms-toast {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: min(380px, 100%);
+  padding: 10px 12px;
+  border: 1px solid var(--garis-tegas);
+  border-radius: 8px;
+  background: var(--papan);
+  color: var(--jelaga);
+  font-size: 13.5px;
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.18);
+  animation: cms-masuk 160ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.cms-toast__titik { width: 7px; height: 7px; flex-shrink: 0; border-radius: 99px; background: var(--hijau); }
+.cms-toast--galat .cms-toast__titik { background: var(--api); }
+
+@keyframes cms-masuk {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+
+/* ── Kerangka memuat ────────────────────────────────────────────────────── */
 
 .cms-skeleton {
-  background: var(--garis);
+  background: var(--rona-kuat);
   border-radius: var(--jari);
   animation: cms-kedip 1.4s ease-in-out infinite;
 }
 
 @keyframes cms-kedip {
-  0%, 100% { opacity: 0.35; }
-  50% { opacity: 0.75; }
+  0%, 100% { opacity: 0.5; }
+  50% { opacity: 1; }
 }
 
 /* ── Peta pintu masuk ───────────────────────────────────────────────────── */
 
-/* Nusantara digambar sekali saat halaman masuk terbuka: garisnya ditarik dari
-   barat ke timur. pathLength="1" pada tiap provinsi membuat panjang semua
-   lintasan dianggap satu, jadi provinsi sebesar Papua dan sekecil Bali selesai
-   digambar bersamaan — tanpa itu yang kecil sudah usai sebelum yang besar
-   mulai terlihat. */
 @keyframes cms-tarik {
   from { stroke-dashoffset: 1; }
   to { stroke-dashoffset: 0; }
@@ -359,22 +454,14 @@ textarea.cms-isian { line-height: 1.55; resize: vertical; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .cms-peta path {
-    animation: none;
-    stroke-dashoffset: 0;
-  }
+  .cms-peta path { animation: none; stroke-dashoffset: 0; }
   .cms-peta .cms-peta__sorot { opacity: 1; }
-  .cms-baris, .cms-isian, .cms-tombol, .cms-tautan { transition: none; }
+  .cms-baris, .cms-isian, .cms-tombol, .cms-tautan, .cms-ikon-tombol { transition: none; }
+  .cms-toast { animation: none; }
 }
 
-/* ── Penanda pemilih lokasi di peta ───────────────────────────────────────
-   DivIcon: wadahnya diberi Leaflet (class peta-lokasi-penanda), isinya satu
-   titik yang digambar CSS. Titiknya pas di ujung yang ditunjuk — iconAnchor
-   di peta-lokasi.tsx mengunci tepat ke tengahnya. */
-.peta-lokasi-penanda {
-  background: none;
-  border: 0;
-}
+/* ── Penanda pemilih lokasi di peta ─────────────────────────────────────── */
+.peta-lokasi-penanda { background: none; border: 0; }
 
 .peta-lokasi-penanda span {
   display: block;
@@ -385,4 +472,208 @@ textarea.cms-isian { line-height: 1.55; resize: vertical; }
   background: var(--api);
   border: 2.5px solid #fff;
   box-shadow: 0 1px 6px rgb(0 0 0 / 0.45);
+}
+
+/* Sidebar ciut: kolom ikon. Label tetap di DOM untuk aksesibilitas tautan
+   lewat title/aria; yang disembunyikan hanya tampilannya. */
+[data-ciut] .cms-label { display: none; }
+[data-ciut] .cms-tautan { justify-content: center; padding: 0; }
+
+/* ── Ruang kerja: bilah atas, kepala halaman, kartu ─────────────────────── */
+
+/* Bilah atas yang menempel: remah roti + aksi. Judul besar halaman ada di
+   bawahnya (.cms-kepala) dan ikut tergulir; remah tetap memberi konteks. */
+.cms-kop-panel {
+  display: flex;
+  align-items: center;
+  min-height: 48px;
+  padding-block: 6px;
+  border-bottom: 1px solid var(--garis);
+  background: color-mix(in srgb, var(--kertas) 88%, transparent);
+  backdrop-filter: saturate(1.4) blur(10px);
+}
+
+.cms-remah { display: flex; min-width: 0; align-items: center; gap: 2px; white-space: nowrap; font-size: 13.5px; }
+.cms-remah a { flex-shrink: 0; color: var(--lirih); border-radius: 4px; padding: 2px 4px; transition: color 120ms ease, background-color 120ms ease; }
+.cms-remah a:hover { color: var(--tinta); background: var(--rona); }
+.cms-remah [data-pemisah] { flex-shrink: 0; color: var(--garis-tegas); }
+.cms-remah [aria-current] { min-width: 0; overflow: hidden; text-overflow: ellipsis; padding: 2px 4px; font-weight: 500; color: var(--jelaga); }
+
+/* Kepala halaman: mata kecil, judul, deskripsi. */
+.cms-kepala { padding-top: 24px; }
+.cms-kepala h1 {
+  font-size: 22px;
+  font-weight: 600;
+  line-height: 1.25;
+  letter-spacing: -0.015em;
+  text-wrap: balance;
+}
+.cms-kepala p[data-deskripsi] {
+  margin-top: 6px;
+  max-width: 72ch;
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--redup);
+  text-wrap: pretty;
+}
+
+/* Kartu: satu bidang berbingkai dengan kepala opsional. */
+.cms-kartu {
+  background: var(--papan);
+  border: 1px solid var(--garis);
+  border-radius: var(--jari-kartu);
+  box-shadow: var(--bayang);
+  min-width: 0;
+}
+.cms-kartu__kepala {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--garis);
+}
+.cms-kartu__kepala h2 { font-size: 14px; font-weight: 600; line-height: 1.35; }
+.cms-kartu__kepala p { margin-top: 2px; font-size: 12.5px; line-height: 1.5; color: var(--lirih); }
+.cms-kartu__isi { padding: 20px; }
+.cms-kartu__kaki {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 20px;
+  border-top: 1px solid var(--garis);
+  background: color-mix(in srgb, var(--tinta) 2.5%, var(--papan));
+  border-radius: 0 0 var(--jari-kartu) var(--jari-kartu);
+}
+.cms-kartu--bahaya { border-color: color-mix(in srgb, var(--api) 30%, var(--garis)); }
+.cms-kartu--bahaya .cms-kartu__kepala h2 { color: var(--bara); }
+@media (max-width: 639px) {
+  .cms-kartu__kepala, .cms-kartu__kaki { padding-inline: 16px; }
+  .cms-kartu__isi { padding: 16px; }
+}
+
+/* Daftar keterangan (dl) di kartu samping: label kiri redup, nilai kanan. */
+.cms-dl { display: grid; gap: 12px; font-size: 13px; }
+.cms-dl dt { font-size: 12px; color: var(--lirih); }
+.cms-dl dd { margin-top: 2px; color: var(--jelaga); }
+
+/* Pilihan bersegmen dari radio bawaan — Draft / Tayang, Potret / Lanskap. */
+.cms-segmen {
+  display: grid;
+  grid-auto-columns: 1fr;
+  grid-auto-flow: column;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--garis-tegas);
+  border-radius: var(--jari);
+  background: var(--rona);
+}
+.cms-segmen label {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 10px;
+  border-radius: calc(var(--jari) - 2px);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--redup);
+  cursor: pointer;
+  transition: background-color 120ms ease, color 120ms ease, box-shadow 120ms ease;
+}
+.cms-segmen label:hover { color: var(--jelaga); }
+.cms-segmen input { position: absolute; opacity: 0; pointer-events: none; }
+.cms-segmen label:has(:checked) {
+  background: var(--papan);
+  color: var(--jelaga);
+  box-shadow: 0 0 0 1px var(--garis-tegas), 0 1px 2px rgb(0 0 0 / 0.06);
+}
+.cms-segmen label:has(:focus-visible) { outline: 2px solid var(--limau); outline-offset: 1px; }
+.cms-segmen label:has(:disabled) { opacity: 0.6; cursor: not-allowed; }
+
+/* Tabel data: bingkai bergaris, baris dipisah garis rambut, hover berupa rona. */
+.cms-tabel-bingkai {
+  border: 1px solid var(--garis);
+  border-radius: var(--jari-kartu);
+  background: var(--papan);
+  box-shadow: var(--bayang);
+  overflow: hidden;
+}
+.cms-tabel-gulir { overflow-x: auto; }
+.cms-tabel {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.cms-tabel th {
+  height: 38px;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--garis);
+  background: color-mix(in srgb, var(--tinta) 2.5%, var(--papan));
+  color: var(--lirih);
+  font-size: 12px;
+  font-weight: 500;
+  text-align: left;
+  white-space: nowrap;
+}
+.cms-tabel th:first-child, .cms-tabel td:first-child { padding-left: 16px; }
+.cms-tabel th:last-child, .cms-tabel td:last-child { padding-right: 16px; }
+.cms-tabel td {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--garis);
+  vertical-align: middle;
+}
+.cms-tabel tbody tr:last-child td { border-bottom: 0; }
+.cms-tabel tbody tr { transition: background-color 100ms ease; }
+.cms-tabel tbody tr:hover { background: color-mix(in srgb, var(--tinta) 2.5%, transparent); }
+/* Baris yang perlu dikerjakan: garis merah tipis di tepi kiri. */
+.cms-tabel tr[data-perhatian] td:first-child { box-shadow: inset 2px 0 0 var(--api); }
+.cms-tabel .cms-sel-aksi { width: 1%; white-space: nowrap; text-align: right; }
+/* Aksi hantu menegas di baris yang sedang ditunjuk/difokus. */
+.cms-tabel tr:is(:hover, :focus-within) .cms-tombol--hantu:not(:hover),
+.cms-tabel tr:is(:hover, :focus-within) .cms-tombol--hantu-bahaya:not(:hover) { color: var(--jelaga); }
+.cms-tabel-kaki { border-top: 1px solid var(--garis); }
+
+/* Bidang kosong di dalam bingkai tabel / kartu. */
+.cms-hampa {
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  padding: 48px 24px;
+  text-align: center;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--lirih);
+}
+.cms-hampa svg { width: 22px; height: 22px; color: var(--lirih); opacity: 0.8; margin-bottom: 4px; }
+.cms-hampa strong { font-size: 14px; font-weight: 600; color: var(--jelaga); }
+
+.cms-kbd {
+  display: inline-block;
+  min-width: 18px;
+  padding: 0 4px;
+  border: 1px solid var(--garis-tegas);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  font-family: var(--huruf-mono);
+  font-size: 11px;
+  line-height: 16px;
+  text-align: center;
+  color: var(--redup);
+}
+
+/* Palet perintah (⌘K) — <dialog> bawaan peramban. */
+.cms-palet {
+  width: min(560px, calc(100vw - 32px));
+  margin: 12vh auto auto;
+  padding: 0;
+  border: 1px solid var(--garis-tegas);
+  border-radius: 10px;
+  background: var(--papan);
+  color: var(--jelaga);
+  box-shadow: 0 24px 60px -12px rgb(0 0 0 / 0.35);
+}
+.cms-palet::backdrop { background: rgb(0 0 0 / 0.35); }
+.cms-palet [aria-selected="true"] { background: var(--rona-kuat); }
 }

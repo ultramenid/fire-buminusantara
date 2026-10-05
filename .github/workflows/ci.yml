@@ -105,6 +105,43 @@ jobs:
           DATABASE_URL: mysql://ci:ci@localhost:3306/ci
           SESSION_SECRET: ci-only-secret
 
+  # Gerbang yang tidak bisa dilihat tsc: payload Prisma vs skema DB SUNGGUHAN.
+  # Insiden image_en (Verifikasi gagal berhari-hari) lolos tsc + unit test;
+  # di sini ia gagal. Juga menjaga schema.prisma = migrasi: drift membuat
+  # `migrate dev` berikutnya diam-diam menyusun DROP COLUMN di DB yang dipakai
+  # bersama aplikasi Laravel. MariaDB = mesin yang sama dengan produksi.
+  test-db:
+    needs: changes
+    if: needs.changes.outputs.web == 'true'
+    runs-on: ubuntu-latest
+    services:
+      mariadb:
+        image: mariadb:11
+        env:
+          MARIADB_ROOT_PASSWORD: ci
+          MARIADB_DATABASE: ci
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="healthcheck.sh --connect --innodb_initialized"
+          --health-interval=5s --health-timeout=5s --health-retries=20
+    env:
+      DATABASE_URL: mysql://root:ci@127.0.0.1:3306/ci
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - run: npm ci
+      - run: npx prisma generate
+      - run: npx prisma migrate deploy
+      # --exit-code: 2 = DB hasil migrasi ≠ schema.prisma. Perbaiki dengan
+      # migrasi baru (atau deklarasikan kolom warisan), jangan dengan db push.
+      - run: npx prisma migrate diff --from-config-datasource --to-schema prisma/schema.prisma --exit-code
+      - run: npm run test:db
+
   # --no-git: pindai pohon kerja, bukan riwayat — menangkap rahasia yang sedang
   # ditambahkan sekarang tanpa menggagalkan setiap PR karena commit purba.
   # --redact: jangan pernah cetak rahasia ke log. Versi dipatok (bukan latest).

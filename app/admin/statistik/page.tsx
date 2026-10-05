@@ -1,6 +1,6 @@
 import { wajibSesi } from "@/lib/sesi";
 import { ambilSorotan } from "@/lib/statistik-sorotan";
-import { HALAMAN, KopHalaman } from "../kop-halaman";
+import { ISI, KopPanel } from "../ruang";
 import { FormSorotan } from "./form-sorotan";
 
 export default async function Statistik() {
@@ -9,12 +9,15 @@ export default async function Statistik() {
   const awal = await ambilSorotan();
 
   return (
-    <div className={HALAMAN}>
-      <KopHalaman
-        mata="Konten"
+    <>
+      <KopPanel
+        mata="Konten beranda"
         judul="Angka sorotan karhutla"
+        deskripsi="Empat kartu angka di strip statistik halaman depan (landing page) karhutla dalam dua bahasa. Tersimpan langsung tampil di publik."
       />
-      <FormSorotan awal={awal} />
-    </div>
+      <div className={ISI}>
+        <FormSorotan awal={awal} />
+      </div>
+    </>
   );
 }

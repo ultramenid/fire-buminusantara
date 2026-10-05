@@ -1,7 +1,9 @@
+import type { Prisma } from "@prisma/client";
 import { prisma } from "./prisma.ts";
 import { simpanBerkasGaleri, hapusBerkas } from "./unggah.ts";
 import { bacaBerkasMedia, orientasiKartu, type BerkasMedia } from "./media.ts";
 import { lokasiDariKoordinat } from "./geo.ts";
+import { catatGalat } from "./catat-galat.ts";
 
 /** Revalidasi cache halaman beranda dan locale saat data kejadian berubah. */
 export async function revalidasiKejadian() {
@@ -175,6 +177,7 @@ export async function simpanKejadian(data: FormData, id?: number, mediaAwal?: Be
   if (!judulId || !judulEn) return { ok: false, galat: "Judul (ID) dan (EN) wajib diisi." };
   if (!lokasi) return { ok: false, galat: "Lokasi wajib diisi." };
   if (!tanggal) return { ok: false, galat: "Tanggal kejadian wajib diisi." };
+  if (Number.isNaN(Date.parse(tanggal))) return { ok: false, galat: "Tanggal kejadian tidak sah." };
   if (lat === null || lat < -90 || lat > 90) return { ok: false, galat: "Latitude harus antara -90 dan 90." };
   if (lng === null || lng < -180 || lng > 180) return { ok: false, galat: "Longitude harus antara -180 dan 180." };
 
@@ -227,7 +230,10 @@ export async function simpanKejadian(data: FormData, id?: number, mediaAwal?: Be
     image_id: imageIdBaru,
     video: videoBaru,
     updated_at: new Date(),
-  };
+    // satisfies: kolom yang dihapus/diganti nama di schema langsung jadi galat
+    // tsc. Objek di variabel tidak kena cek properti berlebih — begitulah
+    // `image_en` lolos ke produksi.
+  } satisfies Prisma.eventsUncheckedUpdateInput;
 
   try {
     let idTersimpan: number;
@@ -243,9 +249,8 @@ export async function simpanKejadian(data: FormData, id?: number, mediaAwal?: Be
         idTersimpan = Number(baru.id);
       }
     } catch (dbErr: unknown) {
-      const msg = dbErr instanceof Error ? dbErr.message : "";
       // Jika terjadi tabrakan slug konkuren, coba sekali lagi dengan slug berakhiran acak
-      if ((msg.includes("slug") || msg.includes("Unique constraint")) && !slugDiminta) {
+      if (bentrokUnik(dbErr) && !slugDiminta) {
         slug = `${slug.slice(0, 190)}-${Math.random().toString(36).slice(2, 6)}`;
         isi.slug = slug;
         if (id) {
@@ -278,8 +283,19 @@ export async function simpanKejadian(data: FormData, id?: number, mediaAwal?: Be
       await hapusBerkas(b.path);
       await hapusBerkas(b.poster);
     }
-    return { ok: false, galat: e instanceof Error ? e.message : "Gagal menyimpan." };
+    // Pesan Prisma mentah (nama tabel/kolom, isi query) hanya untuk log server.
+    await catatGalat("simpanKejadian", e, id ? `id=${id}` : "baru");
+    return { ok: false, galat: "Kejadian gagal disimpan. Coba lagi; bila berulang, hubungi pengelola." };
   }
+}
+
+/**
+ * P2002 = pelanggaran unique constraint (satu-satunya di events: slug).
+ * Jangan cocokkan teks pesan: galat validasi Prisma mencetak seluruh query,
+ * termasuk `slug: "…"`, sehingga ikut memicu retry yang sia-sia.
+ */
+function bentrokUnik(e: unknown): boolean {
+  return (e as { code?: unknown } | null)?.code === "P2002";
 }
 
 export type HasilPromosi = { ok: true; id: number } | { ok: false; galat: string };
@@ -308,7 +324,7 @@ export type LaporanPromosi = {
  *  - tanggal memakai waktu laporan dibuat.
  *  - teks lokasi memakai nama daerah hasil reverse-geocode dari koordinat
  *    laporan; kalau geo tak terjangkau atau titiknya di luar semua daerah,
- *    jatuh ke format "lat, lng" (atau "Lokasi tidak diketahui"). Wilayah/admin
+ *    jatuh ke format "lat, lng". Laporan tanpa titik ditolak (lihat di bawah). Wilayah/admin
  *    dapat mengubahnya belakangan.
  *  - lampiran laporan dibawa apa adanya ke kolom media (format sama).
  *  - orientasi kartu diambil dari pilihan potret/lanskap peninjau — tanpa itu
@@ -318,9 +334,17 @@ export async function promosiKeKejadian(
   laporan: LaporanPromosi,
   tx: Parameters<Parameters<typeof prisma.$transaction>[0]>[0] = prisma,
 ): Promise<HasilPromosi> {
-  const lat = laporan.location_lat === null ? 0 : Number(laporan.location_lat);
-  const lng = laporan.location_lng === null ? 0 : Number(laporan.location_lng);
-  const diketahui = laporan.location_lat !== null && laporan.location_lng !== null;
+  // events.location_lat/lng NOT NULL (DB dipakai bersama aplikasi Laravel),
+  // dan dulu laporan tanpa titik diisi 0,0 — kejadian mendarat di Teluk Guinea.
+  // Kurator wajib mengisi titik di "Sunting laporan" sebelum verifikasi.
+  if (laporan.location_lat === null || laporan.location_lng === null) {
+    return {
+      ok: false,
+      galat: "Laporan ini belum punya titik lokasi. Buka detail laporan, isi latitude & longitude, lalu verifikasi.",
+    };
+  }
+  const lat = Number(laporan.location_lat);
+  const lng = Number(laporan.location_lng);
 
   // Nama tempat pilihan kurator menang atas reverse geocode: ia melihat
   // lampirannya dan tahu di mana kejadiannya, layanan geocode hanya menebak
@@ -330,8 +354,6 @@ export async function promosiKeKejadian(
   let lokasi: string;
   if (lokasiKurator) {
     lokasi = lokasiKurator;
-  } else if (!diketahui) {
-    lokasi = "Lokasi tidak diketahui";
   } else {
     // Reverse geocode opsional & non-blokir: kegagalannya tidak boleh
     // menggagalkan kenaikan laporan, maka fallback ke koordinat mentah.
@@ -379,7 +401,7 @@ export async function promosiKeKejadian(
     video: videoPath,
     created_at: new Date(),
     updated_at: new Date(),
-  };
+  } satisfies Prisma.eventsUncheckedCreateInput;
 
   try {
     try {
@@ -390,8 +412,7 @@ export async function promosiKeKejadian(
       revalidasiKejadian();
       return { ok: true, id: Number(baru.id) };
     } catch (createErr: unknown) {
-      const msg = createErr instanceof Error ? createErr.message : "";
-      if (msg.includes("slug") || msg.includes("Unique constraint")) {
+      if (bentrokUnik(createErr)) {
         // Retry otomatis dengan suffix acak jika slug bentrok di transaksi paralel
         dataKejadian.slug = `${slug.slice(0, 190)}-${Math.random().toString(36).slice(2, 6)}`;
         const baru = await tx.events.create({
@@ -404,7 +425,8 @@ export async function promosiKeKejadian(
       throw createErr;
     }
   } catch (e) {
-    return { ok: false, galat: e instanceof Error ? e.message : "Gagal menaikkan laporan." };
+    await catatGalat("promosiKeKejadian", e);
+    return { ok: false, galat: "Laporan gagal dijadikan kejadian. Coba lagi; bila berulang, hubungi pengelola." };
   }
 }
 

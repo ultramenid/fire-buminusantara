@@ -9,6 +9,7 @@ import os from "node:os";
 import path from "node:path";
 import exifr from "exifr";
 import { S3Client, PutObjectCommand, DeleteObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
+import { catatGalat } from "./catat-galat.ts";
 
 export const AWALAN_LOKAL = "fire/";
 
@@ -154,11 +155,10 @@ export async function simpanBerkas(
       });
       return { path: AWALAN_LOKAL + relatif, url: `/media/${relatif}` };
     } catch (galatLokal) {
-      console.error("[Upload GAGAL TOTAL]", {
-        minio: err.message,
-        lokal: galatLokal instanceof Error ? galatLokal.message : String(galatLokal),
-      });
-      return { galat: err.message || "Gagal menyimpan berkas." };
+      // MinIO DAN disk lokal gagal: tak ada laporan berberkas yang bisa masuk.
+      await catatGalat("Upload GAGAL TOTAL", galatLokal, `minio: ${err.message}`);
+      // Pesan MinIO/fs mentah sudah dicatat di atas; pengguna cukup tahu gagal.
+      return { galat: "Gagal menyimpan berkas. Coba lagi." };
     }
   }
 }
@@ -446,6 +446,14 @@ function waktuExif(raw: unknown): string | undefined {
  * pemanggil menyembunyikan barisnya, bukan menampilkan kolom kosong.
  */
 /**
+ * Titik GPS yang layak dipakai. 0,0 ("Null Island") ditolak: banyak kamera
+ * Android menulisnya saat belum dapat fix, dan ia lolos sebagai lokasi asli.
+ */
+export function titikGpsSah(lat: number, lng: number): boolean {
+  return Number.isFinite(lat) && Number.isFinite(lng) && !(lat === 0 && lng === 0);
+}
+
+/**
  * Ekstrak GPS dan waktu pengambilan dari buffer berkas (foto/video).
  */
 export async function exifDariBuffer(buf: Buffer): Promise<ExifFoto | null> {
@@ -454,7 +462,7 @@ export async function exifDariBuffer(buf: Buffer): Promise<ExifFoto | null> {
   // Video: hanya GPS, via parser QuickTime ISO6709 (exifr tak mendukung MP4).
   if (tampaknyaVideo(buf)) {
     const gps = gpsDariVideo(buf);
-    if (gps && Number.isFinite(gps.lat) && Number.isFinite(gps.lng)) {
+    if (gps && titikGpsSah(gps.lat, gps.lng)) {
       hasil.lat = gps.lat;
       hasil.lng = gps.lng;
     }
@@ -470,7 +478,7 @@ export async function exifDariBuffer(buf: Buffer): Promise<ExifFoto | null> {
         .catch(() => null),
     ]);
 
-    if (gps && Number.isFinite(gps.latitude) && Number.isFinite(gps.longitude)) {
+    if (gps && titikGpsSah(gps.latitude, gps.longitude)) {
       hasil.lat = gps.latitude;
       hasil.lng = gps.longitude;
     }
@@ -519,8 +527,10 @@ export async function hapusBerkas(jalur: string | null | undefined): Promise<voi
     await getMinioClient().send(
       new DeleteObjectCommand({ Bucket: cfg.bucket, Key: relatif }),
     );
-  } catch {
+  } catch (e) {
     // MinIO tidak tersedia — berkasnya mungkin tersimpan lewat jalur cadangan.
+    // Dicatat: tanpa ini objek yatim di MinIO tidak pernah ketahuan.
+    console.warn("[hapusBerkas] MinIO gagal menghapus", relatif, e instanceof Error ? e.message : e);
   }
 
   try {

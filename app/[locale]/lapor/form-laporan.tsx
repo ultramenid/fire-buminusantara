@@ -2,11 +2,12 @@
 
 import { useActionState, useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { BATAS_BERKAS, BATAS_TOTAL_BYTE } from "@/lib/batas-laporan";
-import { TEKS_LAPOR, type Bahasa } from "@/lib/bahasa";
+import { BATAS_BERKAS, BATAS_TOTAL_BYTE, koordinat, ukuranTeks } from "@/lib/batas-laporan";
+import { TEKS_LAPOR, galatServerLapor, type Bahasa } from "@/lib/bahasa";
 import { BilahUnggah } from "@/components/bilah-unggah";
+import { ambilPosisi, izinDitolak } from "@/lib/posisi-gps";
 import { Switch } from "@/components/ui/switch";
-import { kirimLaporan, type KeadaanLapor } from "./aksi";
+import { kirimLaporan, mintaTiketLapor, type KeadaanLapor } from "./aksi";
 
 /** Site key Turnstile. Tanpa ini (pengembangan) widget tidak dirender dan
  *  verifikasi di server pun dilewati — sama seperti kolom komentar. */
@@ -30,11 +31,6 @@ type TurnstileInstance = {
 
 function turnstile(): TurnstileInstance | null {
   return (window as Window & { turnstile?: TurnstileInstance }).turnstile ?? null;
-}
-
-function ukuranTeks(byte: number): string {
-  if (byte >= 1024 * 1024) return `${(byte / (1024 * 1024)).toFixed(1)} MB`;
-  return `${Math.max(1, Math.round(byte / 1024))} KB`;
 }
 
 /** Dua berkas dianggap sama kalau nama, ukuran, dan waktu ubahnya sama —
@@ -84,6 +80,16 @@ export function FormLaporan({ bahasa }: { bahasa: Bahasa }) {
      atas semua return bersyarat di komponen ini. Janji sederhana yang
      diselesaikan callback Turnstile jauh lebih tenang. */
   const penungguToken = useRef<((tiba: boolean) => void)[]>([]);
+  // Kiriman yang ditahan menunggu token dilepas SETELAH render yang memuat
+  // token: requestSubmit langsung dari callback masih memakai onSubmit lama
+  // (menungguToken=true) dan input captcha yang kosong, jadi tertolak diam-diam.
+  const kirimTertundaRef = useRef(false);
+  useEffect(() => {
+    if (kirimTertundaRef.current && !menungguToken && captchaToken) {
+      kirimTertundaRef.current = false;
+      formRef.current?.requestSubmit();
+    }
+  }, [menungguToken, captchaToken]);
   const lokasiAktifRef = useRef(true);
   // Nilai lat/lng terkini untuk pengecekan di dalam callback async (isi GPS
   // foto): state yang dibaca langsung bisa basi setelah await. Diselaraskan
@@ -122,6 +128,16 @@ export function FormLaporan({ bahasa }: { bahasa: Bahasa }) {
   const [keadaan, aksi, mengirim] = useActionState<KeadaanLapor, FormData>(
     async (sebelumnya: KeadaanLapor, data: FormData) => {
       try {
+        // Token captcha ditukar tiket lebih dulu, lewat permintaan kecil:
+        // token hanya hidup 5 menit, unggahan di sinyal lemah bisa lebih lama.
+        const token = String(data.get("captcha") ?? "");
+        const tiket = await mintaTiketLapor(token);
+        if (!tiket) {
+          ulangCaptcha();
+          return { ok: false, galat: "Verifikasi captcha gagal. Coba lagi.", bidang: "captcha" as const };
+        }
+        data.delete("captcha");
+        data.set("tiket", tiket);
         const hasil = await kirimLaporan(sebelumnya, data);
         if (hasil?.ok) {
           for (const url of urlRef.current) URL.revokeObjectURL(url);
@@ -132,6 +148,15 @@ export function FormLaporan({ bahasa }: { bahasa: Bahasa }) {
           ulangCaptcha();
         }
         return hasil;
+      } catch (e) {
+        // Jaringan putus / server tak menjawab: action melempar, dan tanpa
+        // tangkapan ini useActionState meneruskannya ke error boundary — form
+        // lepas dan semua isian serta berkas hilang.
+        console.error("[kirimLaporan]", e);
+        ulangCaptcha();
+        // Pesan klien (bukan galat server), jadi tidak lewat galatServerLapor.
+        setGalatKlien(teks.kirimTerputus);
+        return null;
       } finally {
         sedangKirimRef.current = false;
       }
@@ -141,6 +166,14 @@ export function FormLaporan({ bahasa }: { bahasa: Bahasa }) {
 
   const berhasil = keadaan?.ok === true;
   const totalByte = berkas.reduce((n, b) => n + b.size, 0);
+
+  // Galat server menyebut bidangnya: pindahkan fokus ke sana — di ponsel
+  // pelapor sedang di tombol Kirim, jauh dari pesan dan isian yang salah.
+  useEffect(() => {
+    if (!keadaan || keadaan.ok || !keadaan.bidang) return;
+    const id = { judul: "lapor-judul", deskripsi: "lapor-deskripsi", berkas: "berkas-laporan", koordinat: "lapor-lat", captcha: "" }[keadaan.bidang];
+    if (id) document.getElementById(id)?.focus();
+  }, [keadaan]);
 
   const sinkronkanKeInput = useCallback((daftar: File[]) => {
     const input = berkasRef.current;
@@ -259,6 +292,9 @@ export function FormLaporan({ bahasa }: { bahasa: Bahasa }) {
 
     if (gabungan.length > BATAS_BERKAS) {
       setGalatKlien(teks.terlaluBanyak.replace("{n}", String(BATAS_BERKAS)));
+      // Peramban sudah mengganti isi <input> dengan pilihan yang ditolak ini;
+      // kembalikan ke daftar yang tampil, kalau tidak yang ditolak ikut terkirim.
+      sinkronkanKeInput(berkas);
       return;
     }
     // Atap ukuran dicek di sini, bukan dibiarkan sampai server: kiriman yang
@@ -266,6 +302,9 @@ export function FormLaporan({ bahasa }: { bahasa: Bahasa }) {
     // memberi tahu apa pun kepada orang yang sedang mengunggah.
     if (gabungan.reduce((n, b) => n + b.size, 0) > BATAS_TOTAL_BYTE) {
       setGalatKlien(teks.terlaluBesar);
+      // Peramban sudah mengganti isi <input> dengan pilihan yang ditolak ini;
+      // kembalikan ke daftar yang tampil, kalau tidak yang ditolak ikut terkirim.
+      sinkronkanKeInput(berkas);
       return;
     }
 
@@ -308,7 +347,9 @@ export function FormLaporan({ bahasa }: { bahasa: Bahasa }) {
         } | null;
         if (
           !gps || typeof gps.latitude !== "number" || typeof gps.longitude !== "number" ||
-          !Number.isFinite(gps.latitude) || !Number.isFinite(gps.longitude)
+          !Number.isFinite(gps.latitude) || !Number.isFinite(gps.longitude) ||
+          // 0,0 = kamera belum dapat fix, bukan lokasi (lihat titikGpsSah).
+          (gps.latitude === 0 && gps.longitude === 0)
         ) {
           continue;
         }
@@ -349,7 +390,7 @@ export function FormLaporan({ bahasa }: { bahasa: Bahasa }) {
     }
     setMencariLokasi(true);
     setGalatKlien("");
-    navigator.geolocation.getCurrentPosition(
+    ambilPosisi().then(
       (posisi) => {
         if (!lokasiAktifRef.current) return;
         setMencariLokasi(false);
@@ -359,12 +400,11 @@ export function FormLaporan({ bahasa }: { bahasa: Bahasa }) {
         setLng(posisi.coords.longitude.toFixed(7));
         setSumberLokasi(null);
       },
-      () => {
+      (e) => {
         if (!lokasiAktifRef.current) return;
         setMencariLokasi(false);
-        setGalatKlien(teks.lokasiGagal);
+        setGalatKlien(izinDitolak(e) ? teks.lokasiDitolak : teks.lokasiGagal);
       },
-      { enableHighAccuracy: true, timeout: 10_000 },
     );
   }
 
@@ -387,7 +427,8 @@ export function FormLaporan({ bahasa }: { bahasa: Bahasa }) {
     );
   }
 
-  const galat = galatKlien || (keadaan && !keadaan.ok ? keadaan.galat : "");
+  const galat = galatKlien ||
+    (keadaan && !keadaan.ok ? galatServerLapor(keadaan.galat, keadaan.bidang, bahasa) : "");
 
   return (
     <form
@@ -407,6 +448,14 @@ export function FormLaporan({ bahasa }: { bahasa: Bahasa }) {
           document.getElementById("berkas-laporan")?.focus();
           return;
         }
+        // Koordinat salah ketik ditolak di sini, bukan setelah unggahan selesai.
+        const titik = koordinat(lat, lng);
+        if (titik && "galat" in titik) {
+          e.preventDefault();
+          setGalatKlien(titik.galat);
+          document.getElementById("lapor-lat")?.focus();
+          return;
+        }
         // Token belum datang: TAHAN kirimannya, jangan tolak diam-diam.
         if (Boolean(SITE_KEY) && !captchaToken) {
           e.preventDefault();
@@ -422,18 +471,14 @@ export function FormLaporan({ bahasa }: { bahasa: Bahasa }) {
           }).then((tiba) => {
             setMenungguToken(false);
             if (!tiba) {
-              setGalatKlien(
-                bahasa === "en"
-                  ? "Security check could not load. Check your connection and try again."
-                  : "Pemeriksaan keamanan gagal dimuat. Periksa koneksi Anda lalu coba lagi.",
-              );
+              setGalatKlien(teks.keamananGagal);
               return;
             }
-            sedangKirimRef.current = true;
-            formRef.current?.requestSubmit();
+            kirimTertundaRef.current = true;
           });
           return;
         }
+        setGalatKlien("");
         sedangKirimRef.current = true;
       }}
       className="grid gap-7"
@@ -489,7 +534,7 @@ export function FormLaporan({ bahasa }: { bahasa: Bahasa }) {
                   <button type="button"
                           onClick={() => hapusBerkasDipilih(kunci, url)}
                           aria-label={`${teks.hapusBerkas} ${b.name}`}
-                          className="absolute top-1 right-1 z-[3] grid size-5 cursor-pointer place-items-center rounded-full
+                          className="absolute top-1 right-1 z-[3] grid size-8 cursor-pointer place-items-center rounded-full
                                      bg-black/60 text-white transition-colors hover:bg-api">
                     <svg viewBox="0 0 20 20" aria-hidden="true" fill="currentColor" className="size-3">
                       <path d="M6.28 5.22a.75.75 0 0 0-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 1 0 1.06 1.06L10 11.06l3.72 3.72a.75.75 0 1 0 1.06-1.06L11.06 10l3.72-3.72a.75.75 0 0 0-1.06-1.06L10 8.94 6.28 5.22Z" />
@@ -505,7 +550,7 @@ export function FormLaporan({ bahasa }: { bahasa: Bahasa }) {
                     <img src={url} alt="" className="h-[86px] w-full object-cover" />
                   ) : (
                     <div className="flex h-[86px] w-full items-center justify-center bg-black/[0.06]">
-                      <span className="text-[11px] text-tinta/40">{b.type.startsWith("video/") ? "Video" : "Foto"}</span>
+                      <span className="text-[11px] text-tinta/40">{b.type.startsWith("video/") ? teks.video : teks.foto}</span>
                     </div>
                   )}
                   <p className="truncate px-2 py-1.5 text-[11px] text-tinta/60" title={b.name}>{b.name}</p>
@@ -568,7 +613,12 @@ export function FormLaporan({ bahasa }: { bahasa: Bahasa }) {
       <div ref={captchaRef} />
       <input type="hidden" name="captcha" value={captchaToken} />
 
-      {mengirim && <BilahUnggah />}
+      {mengirim && <BilahUnggah label={teks.mengirim} />}
+
+      {/* Peringatan, bukan penghalang: warga tanpa GPS tetap boleh melapor. */}
+      {!mengirim && lat.trim() === "" && lng.trim() === "" && (
+        <p className="text-[13px] text-tinta/60">{teks.tanpaLokasi}</p>
+      )}
 
       <div className="flex items-center gap-4 border-t border-black/[0.08] pt-6">
         {/* "Memverifikasi…" HANYA saat mengirim, tidak saat halaman dibuka.
@@ -586,7 +636,7 @@ export function FormLaporan({ bahasa }: { bahasa: Bahasa }) {
           {mengirim
             ? teks.mengirim
             : menungguToken
-            ? (bahasa === "en" ? "Verifying…" : "Memverifikasi…")
+            ? teks.memverifikasi
             : teks.kirim}
         </button>
         <Link href={`/${bahasa}`} className="cursor-pointer text-[13px] text-tinta/50 underline-offset-4 hover:underline dark:text-[#d1d5db]">

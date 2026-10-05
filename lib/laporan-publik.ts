@@ -3,7 +3,12 @@ import { umumkanTunggakan } from "./loket-tunggakan.ts";
 import { bacaBerkasMedia, urlMedia, type BerkasMedia, type Orientasi } from "./media.ts";
 import { simpanBerkasGaleri, hapusBerkas, exifDariBerkas, type ExifFoto } from "./unggah.ts";
 import { turnstileSah } from "./turnstile.ts";
-import { BATAS_BERKAS, BATAS_TOTAL_BYTE } from "./batas-laporan.ts";
+import { pakaiTiket } from "./tiket-lapor.ts";
+import { BATAS_BERKAS, BATAS_TOTAL_BYTE, koordinat } from "./batas-laporan.ts";
+import { catatGalat } from "./catat-galat.ts";
+
+/** Pembawa pesan promosi yang ramah keluar dari transaksi (memicu rollback). */
+class GagalPromosi extends Error {}
 
 async function batalkanTag(tag: string) {
   try {
@@ -100,27 +105,6 @@ function lampiranDari(media: unknown): Lampiran[] {
   return hasil;
 }
 
-/** Koordinat opsional, tapi tidak setengah-setengah: satu tanpa yang lain
- *  bukan lokasi, dan menyimpannya begitu hanya menipu peninjau. */
-function koordinat(
-  latMentah: string,
-  lngMentah: string,
-): { lat: number; lng: number } | null | { galat: string } {
-  const adaLat = latMentah.trim() !== "";
-  const adaLng = lngMentah.trim() !== "";
-  if (!adaLat && !adaLng) return null;
-  if (adaLat !== adaLng) return { galat: "Latitude dan longitude harus diisi berdua." };
-
-  const lat = Number(latMentah);
-  const lng = Number(lngMentah);
-  if (!Number.isFinite(lat) || lat < -90 || lat > 90) {
-    return { galat: "Latitude harus angka antara -90 dan 90." };
-  }
-  if (!Number.isFinite(lng) || lng < -180 || lng > 180) {
-    return { galat: "Longitude harus angka antara -180 dan 180." };
-  }
-  return { lat, lng };
-}
 
 /**
  * Terima satu laporan dari pengunjung.
@@ -140,7 +124,13 @@ export async function simpanLaporanPublik(
 ): Promise<HasilLapor> {
   // Captcha diperiksa PALING DULU, sebelum satu berkas pun ditulis: kalau
   // tidak, bot tetap bisa menghabiskan bucket meski laporannya ditolak.
-  if (!(await turnstileSah(String(data.get("captcha") ?? "") || null, ip))) {
+  // Form kini mengirim tiket (token sudah ditukar sebelum unggahan); token
+  // mentah tetap diterima untuk klien lama yang masih terbuka saat deploy.
+  const tiket = String(data.get("tiket") ?? "");
+  const lolos = tiket
+    ? await pakaiTiket(tiket)
+    : await turnstileSah(String(data.get("captcha") ?? "") || null, ip);
+  if (!lolos) {
     return { ok: false, galat: "Verifikasi captcha gagal. Coba lagi.", bidang: "captcha" };
   }
 
@@ -250,10 +240,9 @@ export async function simpanLaporanPublik(
       await hapusBerkas(sudah.path);
       await hapusBerkas(sudah.poster);
     }
-    return {
-      ok: false,
-      galat: e instanceof Error ? e.message : "Laporan gagal disimpan. Coba lagi.",
-    };
+    // Pesan Prisma mentah tidak boleh sampai ke warga: bocorkan skema.
+    await catatGalat("simpanLaporanPublik", e);
+    return { ok: false, galat: "Laporan gagal disimpan. Coba lagi." };
   }
 
   // Antrean "Laporan Warga" baru saja bertambah satu. Tidak ada updateTag di
@@ -321,6 +310,7 @@ export async function daftarLaporan(
   status: StatusLaporan | undefined,
   halaman = 1,
   perHalaman = 15,
+  urut: { kolom: "created_at" | "title" | "reporter_name"; arah: "asc" | "desc" } = { kolom: "created_at", arah: "desc" },
 ): Promise<HasilDaftarLaporan> {
   const where = status ? { status } : {};
 
@@ -328,7 +318,7 @@ export async function daftarLaporan(
     prisma.public_reports.count({ where }),
     prisma.public_reports.findMany({
       where,
-      orderBy: { created_at: "desc" },
+      orderBy: [{ [urut.kolom]: urut.arah }, { id: "desc" }],
       skip: (halaman - 1) * perHalaman,
       take: perHalaman,
       select: PILIH,
@@ -553,17 +543,26 @@ export async function aturStatusLaporan(
         tx,
       );
       if (!promosi.ok) {
-        throw new Error(promosi.galat); // Rollback transaksi jika pembuatan kejadian gagal
+        throw new GagalPromosi(promosi.galat); // Rollback transaksi jika pembuatan kejadian gagal
       }
 
       return { ok: true as const, idKejadian: promosi.id };
-    });
+    },
+    // Promosi bisa reverse-geocode di dalam transaksi (geo PG 10 dtk + OSM
+    // 8 dtk); bawaan Prisma 5 dtk menggagalkan Verifikasi saat geo lambat.
+    // ponytail: baris laporan terkunci selama itu — pindahkan geocode ke
+    // luar transaksi bila peninjau mulai sering bertabrakan.
+    { timeout: 30_000 });
 
     return hasil;
   } catch (e) {
+    // GagalPromosi sudah dilaporkan promosiKeKejadian — jangan alarm dua kali.
+    if (e instanceof GagalPromosi) console.error("[ubahStatusLaporan]", e);
+    else await catatGalat("ubahStatusLaporan", e, `id=${id} → ${status}`);
+    // Satu-satunya throw di transaksi membawa pesan promosi yang sudah ramah.
     return {
       ok: false,
-      galat: e instanceof Error ? e.message : "Gagal memverifikasi laporan.",
+      galat: e instanceof GagalPromosi ? e.message : "Gagal memverifikasi laporan. Coba lagi.",
     };
   } finally {
     await batalkanTag("tunggakan");
@@ -584,10 +583,15 @@ export async function hapusLaporan(id: number) {
   });
   if (!baris) return;
 
-  if (baris.status !== "approved") {
-    for (const berkas of bacaBerkasMedia(baris.media)) await hapusBerkas(berkas.path);
-  }
+  // Baris dulu, berkas kemudian: kalau delete gagal, laporan tetap utuh dan
+  // tidak menunjuk ke berkas yang sudah lenyap.
   await prisma.public_reports.delete({ where: { id } });
+  if (baris.status !== "approved") {
+    for (const berkas of bacaBerkasMedia(baris.media)) {
+      await hapusBerkas(berkas.path);
+      await hapusBerkas(berkas.poster); // poster video ikut — dulu tertinggal
+    }
+  }
   await batalkanTag("tunggakan");
   umumkanTunggakan();
 }

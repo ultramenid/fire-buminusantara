@@ -1,6 +1,6 @@
 import bcrypt from "bcryptjs";
-import { prisma } from "./prisma";
-import type { Sesi } from "./sesi";
+import { prisma } from "./prisma.ts";
+import type { Sesi } from "./sesi.ts";
 
 /**
  * Hash acuan untuk mencegah timing attack (user enumeration).

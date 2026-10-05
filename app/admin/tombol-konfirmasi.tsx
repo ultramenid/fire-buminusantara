@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { Pemuat } from "./pemuat";
 
 export type TombolKonfirmasiProps = {
@@ -139,8 +139,21 @@ function TombolKonfirmasiAktif({
   gap: string;
 }) {
   const [sisaDetik, setSisaDetik] = useState(durasiDetik);
+  // Hitung mundur berhenti selama penunjuk di atas tombolnya (sedang menimbang)
+  // dan selama aksinya berjalan — Verifikasi bisa lebih lama dari 5 detik, dan
+  // dulu tombolnya menutup sendiri di tengah kiriman.
+  const [ditunjuk, setDitunjuk] = useState(false);
+  const jeda = ditunjuk || sibuk;
+  const tombolRef = useRef<HTMLButtonElement>(null);
+
+  // Tombol awal lenyap saat ditekan; tanpa ini fokus papan ketik jatuh ke
+  // <body> dan pengguna keyboard harus mencari tombol "Ya, …" dari awal.
+  useEffect(() => {
+    tombolRef.current?.focus();
+  }, []);
 
   useEffect(() => {
+    if (jeda) return;
     const pewaktu = setInterval(() => {
       setSisaDetik((sisa) => {
         if (sisa <= 1) {
@@ -153,11 +166,13 @@ function TombolKonfirmasiAktif({
     }, 1000);
 
     return () => clearInterval(pewaktu);
-  }, [durasiDetik, onTutup]);
+  }, [durasiDetik, onTutup, jeda]);
 
   return (
-    <span className={`inline-flex items-center ${gap}`}>
+    <span className={`inline-flex items-center ${gap}`}
+          onMouseEnter={() => setDitunjuk(true)} onMouseLeave={() => setDitunjuk(false)}>
       <button
+        ref={tombolRef}
         type={tipe}
         disabled={disabled || sibuk}
         aria-busy={sibuk}

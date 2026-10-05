@@ -1,6 +1,6 @@
 import Link from "next/link";
 import type { Metadata } from "next";
-import { HALAMAN, KopHalaman } from "./kop-halaman";
+import { ISI, KopPanel } from "./ruang";
 
 export const metadata: Metadata = {
   title: "404 — Tidak ditemukan | CMS Pasopati Fire",
@@ -31,16 +31,17 @@ const JALAN_KELUAR = [
  */
 export default function TidakDitemukan() {
   return (
-    <div className={HALAMAN}>
-      <KopHalaman
+    <>
+      <KopPanel
         mata="Galat 404"
         judul="Tidak ditemukan"
-        catatan="Catatan yang dituju mungkin sudah dihapus peninjau lain, atau alamatnya keliru. Tidak ada yang perlu diperbaiki di sini — pilih antrean di bawah, atau pakai menu di samping."
       >
         <Link href="/admin" className="cms-tombol cms-tombol--garis">
           Ke ringkasan
         </Link>
-      </KopHalaman>
+      </KopPanel>
+      <div className={ISI}>
+        <p className="mb-5 max-w-[64ch] text-[13px] leading-[1.55] text-[var(--redup)]">{"Catatan yang dituju mungkin sudah dihapus peninjau lain, atau alamatnya keliru. Tidak ada yang perlu diperbaiki di sini — pilih antrean di bawah, atau pakai menu di samping."}</p>
 
       <div className="cms-kosong">
         <p className="cms-judul text-[18px]">Jalan buntu</p>
@@ -55,6 +56,7 @@ export default function TidakDitemukan() {
           ))}
         </div>
       </div>
-    </div>
+      </div>
+    </>
   );
 }

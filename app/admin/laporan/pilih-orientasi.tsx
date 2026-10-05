@@ -44,7 +44,7 @@ export function PilihOrientasi({
         disabled={sibuk} aria-busy={sibuk}
         onClick={() => pilih("potret")}
         aria-pressed={nilai === "potret"}
-        className={`cms-mata rounded-sm border px-1.5 py-0.5 ${
+        className={`cms-mata rounded-[4px] border px-1.5 py-0.5 ${
           nilai === "potret"
             ? "border-[var(--api)] bg-[var(--api)]/10 text-[var(--jelaga)]"
             : "border-[var(--garis)] text-[var(--lirih)] hover:text-[var(--jelaga)]"
@@ -57,7 +57,7 @@ export function PilihOrientasi({
         disabled={sibuk} aria-busy={sibuk}
         onClick={() => pilih("lanskap")}
         aria-pressed={nilai === "lanskap"}
-        className={`cms-mata rounded-sm border px-1.5 py-0.5 ${
+        className={`cms-mata rounded-[4px] border px-1.5 py-0.5 ${
           nilai === "lanskap"
             ? "border-[var(--api)] bg-[var(--api)]/10 text-[var(--jelaga)]"
             : "border-[var(--garis)] text-[var(--lirih)] hover:text-[var(--jelaga)]"
@@ -67,7 +67,7 @@ export function PilihOrientasi({
       </button>
       {sibuk && <span className="ml-1 text-[var(--lirih)]"><Pemuat /></span>}
 
-      {galat && <span className="cms-mata text-red-700">{galat}</span>}
+      {galat && <span role="alert" className="cms-mata text-[var(--bara)]">{galat}</span>}
     </span>
   );
 }

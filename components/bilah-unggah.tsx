@@ -8,11 +8,11 @@
  * dibutuhkan, unggah berkasnya lewat endpoint XHR sendiri (xhr.upload.onprogress)
  * sebelum form diserahkan.
  */
-export function BilahUnggah({ className = "" }: { className?: string } = {}) {
+export function BilahUnggah({ className = "", label = "Sedang mengirim" }: { className?: string; label?: string } = {}) {
   return (
     <div
       role="status"
-      aria-label="Sedang mengirim"
+      aria-label={label}
       className={`w-full overflow-hidden rounded-full bg-black/10 dark:bg-white/20 ${className}`}
       style={{ height: 3 }}
     >

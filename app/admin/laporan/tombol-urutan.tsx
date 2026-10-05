@@ -53,7 +53,7 @@ export function TombolUrutanLampiran({
             disabled={sibuk}
             onClick={() => geser("pertama")}
             title="Jadikan media ini tampil paling pertama"
-            className="cms-mata rounded-sm border border-[var(--api)] bg-[var(--api)]/10 px-1.5 py-0.5 text-[var(--api)] font-bold hover:bg-[var(--api)] hover:text-white"
+            className="cms-mata rounded-[4px] border border-[var(--api)] bg-[var(--api)]/10 px-1.5 py-0.5 text-[var(--api)] font-bold hover:bg-[var(--api)] hover:text-white"
           >
             ★ Pertama
           </button>
@@ -63,7 +63,7 @@ export function TombolUrutanLampiran({
             onClick={() => geser("atas")}
             title="Pindah ke atas"
             aria-label="Pindah ke atas"
-            className="cms-mata rounded-sm border border-[var(--garis)] px-1.5 py-0.5 text-[var(--redup)] hover:text-[var(--jelaga)] disabled:opacity-30"
+            className="cms-mata rounded-[4px] border border-[var(--garis)] px-1.5 py-0.5 text-[var(--redup)] hover:text-[var(--jelaga)] disabled:opacity-30"
           >
             ↑
           </button>
@@ -77,14 +77,14 @@ export function TombolUrutanLampiran({
           onClick={() => geser("bawah")}
           title="Pindah ke bawah"
           aria-label="Pindah ke bawah"
-          className="cms-mata rounded-sm border border-[var(--garis)] px-1.5 py-0.5 text-[var(--redup)] hover:text-[var(--jelaga)] disabled:opacity-30"
+          className="cms-mata rounded-[4px] border border-[var(--garis)] px-1.5 py-0.5 text-[var(--redup)] hover:text-[var(--jelaga)] disabled:opacity-30"
         >
           ↓
         </button>
       )}
 
       {sibuk && <span className="ml-1 text-[var(--lirih)]"><Pemuat /></span>}
-      {galat && <span className="cms-mata text-red-700">{galat}</span>}
+      {galat && <span role="alert" className="cms-mata text-[var(--bara)]">{galat}</span>}
     </span>
   );
 }

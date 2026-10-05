@@ -1,4 +1,4 @@
-import { type Bahasa } from "./bahasa";
+import { type Bahasa } from "./bahasa.ts";
 
 /** Satu kartu pada strip "Angka hari ini". */
 export type Statistik = {

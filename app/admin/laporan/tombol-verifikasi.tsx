@@ -5,44 +5,60 @@ import { useRouter } from "next/navigation";
 import type { StatusLaporan } from "@/lib/laporan-publik";
 import { aksiStatus, aksiHapusLaporan } from "./aksi";
 import { TombolKonfirmasi } from "../tombol-konfirmasi";
+import { kabari } from "../toko";
 
 /** Aksi yang sedang menunggu konfirmasi kedua di barisnya. */
 type Tindakan = "approved" | "rejected" | "pending" | "hapus";
 
+const KABAR: Record<Tindakan, string> = {
+  approved: "Laporan diverifikasi.",
+  rejected: "Laporan ditolak.",
+  pending: "Laporan dikembalikan ke antrean.",
+  hapus: "Laporan dihapus.",
+};
+
 /**
- * Tombol keputusan untuk satu laporan.
+ * Tombol keputusan untuk satu laporan (di panel rincian).
  *
- * Bentuknya mengikuti AksiKomentar: server action yang memutuskan, komponen ini
- * hanya memanggil lalu menyegarkan halaman, dan setiap keputusan (verifikasi,
- * tolak, kembalikan, hapus) butuh dua tekan melalui TombolKonfirmasi dengan hitung
- * mundur otomatis.
+ * Setiap keputusan butuh dua tekan (TombolKonfirmasi, hitung mundur). Sesudah
+ * diputuskan, halaman langsung pindah ke laporan berikutnya dalam saringan
+ * tabel yang sama — atau kembali ke tabel bila antreannya habis.
  */
 export function TombolVerifikasi({
-  id, status, bolehHapus, setelahHapus,
+  id, status, bolehHapus, berikutnya,
 }: {
   id: number;
   status: StatusLaporan;
   bolehHapus: boolean;
-  /** Ke mana pergi setelah laporan dibuang. Diisi halaman detail: barisnya
-   *  sudah tidak ada, jadi menyegarkan halaman yang sama hanya menghasilkan
-   *  404. Di daftar, dibiarkan kosong — menyegarkan di tempat sudah benar. */
-  setelahHapus?: string;
+  berikutnya: string | null;
 }) {
   const [sibuk, mulai] = useTransition();
   const [pastikan, setPastikan] = useState<Tindakan | null>(null);
   const [galat, setGalat] = useState<string | null>(null);
   const router = useRouter();
 
-  const jalankan = async (kerja: () => Promise<{ ok: boolean; galat?: string }>, pergiKe?: string) => {
+  const jalankan = (tindakan: Tindakan) => {
     mulai(async () => {
-      const hasil = await kerja();
+      let hasil: { ok: boolean; galat?: string; idKejadian?: number | null };
+      try {
+        hasil = tindakan === "hapus" ? await aksiHapusLaporan(id) : await aksiStatus(id, tindakan);
+      } catch (e) {
+        // Jaringan putus/aksi melempar: tampilkan di sini, jangan biarkan
+        // seluruh panel jatuh ke batas galat.
+        console.error("[TombolVerifikasi]", e);
+        hasil = { ok: false, galat: "Tidak tersambung ke server. Coba lagi." };
+      }
       if (!hasil.ok) {
         setGalat(hasil.galat ?? "Gagal memproses laporan.");
         return;
       }
       setGalat(null);
-      if (pergiKe) router.push(pergiKe);
-      else router.refresh();
+      kabari(
+        hasil.idKejadian ? `Laporan diverifikasi — kejadian #${hasil.idKejadian} dibuat.` : KABAR[tindakan],
+        "kabar",
+        hasil.idKejadian ? { href: `/admin/kejadian/${hasil.idKejadian}`, label: "Buka" } : undefined,
+      );
+      router.push(berikutnya ?? "/admin/laporan");
     });
   };
 
@@ -57,7 +73,7 @@ export function TombolVerifikasi({
             sibuk={sibuk}
             terbuka={pastikan === "approved"}
             onTerbukaChange={(buka) => setPastikan(buka ? "approved" : null)}
-            onKonfirmasi={() => jalankan(() => aksiStatus(id, "approved"))}
+            onKonfirmasi={() => jalankan("approved")}
             durasiDetik={5}
           />
         )}
@@ -70,7 +86,7 @@ export function TombolVerifikasi({
             sibuk={sibuk}
             terbuka={pastikan === "rejected"}
             onTerbukaChange={(buka) => setPastikan(buka ? "rejected" : null)}
-            onKonfirmasi={() => jalankan(() => aksiStatus(id, "rejected"))}
+            onKonfirmasi={() => jalankan("rejected")}
             durasiDetik={5}
           />
         )}
@@ -85,7 +101,7 @@ export function TombolVerifikasi({
             sibuk={sibuk}
             terbuka={pastikan === "pending"}
             onTerbukaChange={(buka) => setPastikan(buka ? "pending" : null)}
-            onKonfirmasi={() => jalankan(() => aksiStatus(id, "pending"))}
+            onKonfirmasi={() => jalankan("pending")}
             durasiDetik={5}
           />
         )}
@@ -99,13 +115,13 @@ export function TombolVerifikasi({
             sibuk={sibuk}
             terbuka={pastikan === "hapus"}
             onTerbukaChange={(buka) => setPastikan(buka ? "hapus" : null)}
-            onKonfirmasi={() => jalankan(() => aksiHapusLaporan(id), setelahHapus)}
+            onKonfirmasi={() => jalankan("hapus")}
             durasiDetik={5}
           />
         )}
       </div>
       {galat && (
-        <p role="alert" className="cms-mata text-red-700">{galat}</p>
+        <p role="alert" className="cms-galat">{galat}</p>
       )}
     </div>
   );

@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { prisma } from "./prisma";
+import { prisma } from "./prisma.ts";
 
 /**
  * Suka (jempol) pengunjung pada kejadian umpan. Tanpa akun: satu suka per
