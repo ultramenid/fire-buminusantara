@@ -23,6 +23,9 @@ on:
 
 permissions:
   contents: read
+  # Box login ke GHCR tiap deploy pakai GITHUB_TOKEN run ini — tak ada PAT
+  # tersimpan di box yang bisa kedaluwarsa diam-diam.
+  packages: read
 
 # Satu role = satu box: dua deploy tidak boleh menyentuh box yang sama
 # bersamaan. Antrikan, jangan dibatalkan.
@@ -102,11 +105,14 @@ jobs:
           USER: ${{ secrets.PROD_SSH_USER }}
           ROLE: ${{ inputs.role }}
           TAGS: ${{ inputs.tags }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GHCR_USER: ${{ github.actor }}
         run: |
+          # Token lewat stdin, bukan argumen: tidak muncul di `ps` box maupun log.
           # Box menjalankan skrip deploy dari repo-nya sendiri — logika deploy
           # terverSI bersama kode. reset --hard: box tidak boleh punya keadaan
           # lokal yang menyimpang dari main.
-          ssh -v -o BatchMode=yes \
+          printf '%s' "$GHCR_TOKEN" | ssh -v -o BatchMode=yes \
             -i ~/.ssh/deploy_key \
             -o IdentitiesOnly=yes \
             -o KexAlgorithms=curve25519-sha256,curve25519-sha256@libssh.org,diffie-hellman-group16-sha512,diffie-hellman-group14-sha256 \
@@ -114,4 +120,4 @@ jobs:
             -o ServerAliveInterval=15 \
             -o ServerAliveCountMax=4 \
             "$USER@$HOST" \
-            "export GIT_TERMINAL_PROMPT=0; cd /srv/fire && git fetch origin main && git reset --hard origin/main && ./deploy/remote-deploy.sh '$ROLE' '$TAGS'"
+            "docker login ghcr.io -u '$GHCR_USER' --password-stdin && export GIT_TERMINAL_PROMPT=0; cd /srv/fire && git fetch origin main && git reset --hard origin/main && ./deploy/remote-deploy.sh '$ROLE' '$TAGS'"
