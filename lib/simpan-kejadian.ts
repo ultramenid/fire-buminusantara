@@ -377,7 +377,6 @@ export async function promosiKeKejadian(
     media: laporan.media ?? undefined,
     image_id: imageId,
     video: videoPath,
-    image_en: null,
     created_at: new Date(),
     updated_at: new Date(),
   };
