@@ -44,9 +44,11 @@ export function proxy(request: NextRequest) {
     // memulangkan pengunjung ke /id, yang terasa seperti tombol mati.
     const kePanel = BAHASA.some((b) =>
       pathname === `/${b}/karhutla/panel` || pathname === `/${b}/karhutla/panel/`);
+    // Peta sematan (iframe di situs lain) — lihat app/[locale]/embed.
+    const keSemat = BAHASA.some((b) => pathname === `/${b}/embed`);
     const aset = pathname.startsWith("/_next/") || pathname.startsWith("/assets/") || pathname.startsWith("/css/") ||
       pathname.startsWith("/api/") || pathname.startsWith("/media/") || pathname.includes(".");
-    if (!kePeta && !kePanel && !aset) {
+    if (!kePeta && !kePanel && !keSemat && !aset) {
       request.nextUrl.pathname = "/id";
       return NextResponse.redirect(request.nextUrl, 308);
     }

@@ -440,6 +440,23 @@ export function Peta({ jumlahLaporan, onPilihWilayah, berita, onBukaRincian, leg
 
   const [bukaInfoPerbedaan, setBukaInfoPerbedaan] = useState(false);
 
+  /* Bagikan peta sematan (app/[locale]/embed). URL dirangkai saat tombol
+     ditekan — butuh window.location untuk origin + bahasa aktif. */
+  const [semat, setSemat] = useState<{ tautan: string; kode: string } | null>(null);
+  const [tersalin, setTersalin] = useState<"tautan" | "kode" | null>(null);
+  const bukaSemat = () => {
+    const bahasa = /^\/en(\/|$)/.test(window.location.pathname) ? "en" : "id";
+    const tautan = `${window.location.origin}/${bahasa}/embed`;
+    setSemat({
+      tautan,
+      kode: `<iframe src="${tautan}" width="100%" height="720" style="border:0" loading="lazy" allowfullscreen title="Peta Sebaran Asap Karhutla"></iframe>`,
+    });
+    setTersalin(null);
+  };
+  const salin = (jenis: "tautan" | "kode", teks: string) => {
+    navigator.clipboard.writeText(teks).then(() => setTersalin(jenis), () => {});
+  };
+
   /* Pil alih mode versi rapat untuk bingkai dasbor — sedikit lebih kecil
      dari versi fullscreen beranda. */
   const kelasPil = `flex cursor-pointer items-center gap-1 sm:gap-2 rounded-full font-semibold transition-all ${
@@ -514,7 +531,84 @@ export function Peta({ jumlahLaporan, onPilihWilayah, berita, onBukaRincian, leg
             <line x1="12" y1="8" x2="12.01" y2="8" />
           </svg>
         </button>
+
+        {/* Tombol Sematkan Peta */}
+        <button
+          type="button"
+          onClick={bukaSemat}
+          className={kelasInfo}
+          aria-label="Sematkan peta"
+          title="Sematkan peta"
+        >
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="16 18 22 12 16 6" />
+            <polyline points="8 6 2 12 8 18" />
+          </svg>
+        </button>
       </div>
+
+      {/* Modal Dialog: Sematkan Peta — pola portal yang sama dengan Panduan. */}
+      {semat && createPortal(
+        <div
+          className="fixed inset-0 z-[9999] flex cursor-pointer items-center justify-center bg-black/60 dark:bg-black/75 p-4 backdrop-blur-sm"
+          onClick={() => setSemat(null)}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Sematkan peta"
+            className="relative w-full max-w-lg flex cursor-default flex-col rounded-2xl border border-black/[0.08] bg-white text-tinta dark:border-white/10 dark:bg-pantau-konsol dark:text-white p-4 sm:p-5 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-black/[0.08] dark:border-white/10 pb-3">
+              <div className="flex items-center gap-2">
+                <span className="h-2 w-2 rounded-full bg-tinta/60 dark:bg-white/60" />
+                <h3 className="text-sm font-semibold tracking-wide text-tinta dark:text-white">Sematkan Peta</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSemat(null)}
+                className="rounded-lg cursor-pointer p-1.5 text-tinta/50 hover:bg-black/[0.06] hover:text-tinta dark:text-white/40 dark:hover:bg-white/10 dark:hover:text-white transition-colors"
+                aria-label="Tutup"
+              >
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M18 6 6 18M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <p className="mt-3 text-[11px] leading-relaxed text-tinta/65 dark:text-white/65">
+              Tempelkan kode di bawah ke halaman situs Anda, atau bagikan tautannya langsung.
+            </p>
+
+            {([
+              ["kode", "Kode sematan (HTML)", semat.kode],
+              ["tautan", "Tautan", semat.tautan],
+            ] as const).map(([jenis, label, isi]) => (
+              <div key={jenis} className="mt-3">
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-tinta/45 dark:text-white/40 block">{label}</span>
+                <div className="mt-1 flex items-stretch gap-2">
+                  <textarea
+                    readOnly
+                    value={isi}
+                    rows={jenis === "kode" ? 4 : 1}
+                    onFocus={(e) => e.currentTarget.select()}
+                    className="min-w-0 flex-1 resize-none rounded-lg border border-black/[0.08] bg-black/[0.03] px-2.5 py-1.5 font-mono text-[11px] leading-relaxed text-tinta dark:border-white/10 dark:bg-white/[0.04] dark:text-white/85 focus:outline-none focus-visible:ring-2 focus-visible:ring-black/30 dark:focus-visible:ring-white/40"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => salin(jenis, isi)}
+                    className="shrink-0 cursor-pointer rounded-lg border border-black/[0.08] bg-black/[0.04] px-3 text-xs font-medium text-tinta/80 hover:bg-black/[0.08] hover:text-tinta dark:border-white/10 dark:bg-white/5 dark:text-white/70 dark:hover:bg-white/10 dark:hover:text-white transition-colors"
+                  >
+                    {tersalin === jenis ? "Tersalin ✓" : "Salin"}
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>,
+        document.body,
+      )}
 
       {/* Modal Dialog: Panduan Peta — di-portal ke body: bingkai peta konsol
           memakai `isolate`, dan fixed di dalamnya akan tertahan di bawah laci

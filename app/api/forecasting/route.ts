@@ -1624,8 +1624,9 @@ export async function GET(req: NextRequest) {
       headers: {
         "Content-Type": "text/html; charset=UTF-8",
         "Cache-Control": "no-cache, no-store, must-revalidate",
-        "X-Frame-Options": "SAMEORIGIN",
-        "Content-Security-Policy": "frame-ancestors 'self'",
+        // Boleh dibingkai siapa saja — ia bersarang di peta sematan
+        // /<locale>/embed (lihat next.config.ts).
+        "Content-Security-Policy": "frame-ancestors *",
       },
     });
   } catch (err: unknown) {

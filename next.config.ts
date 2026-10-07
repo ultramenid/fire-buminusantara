@@ -111,16 +111,31 @@ const nextConfig: NextConfig = {
           { key: "Content-Security-Policy", value: "default-src 'none'; sandbox" },
         ],
       },
+      // /api/forecasting ikut boleh dibingkai siapa saja: ia iframe di dalam
+      // /<locale>/embed, dan frame-ancestors memeriksa SEMUA leluhur — termasuk
+      // situs penyemat. Tanpa X-Frame-Options (SAMEORIGIN akan memblokirnya).
       {
         source: "/api/forecasting",
         headers: [
           { key: "X-Content-Type-Options", value: "nosniff" },
-          { key: "X-Frame-Options", value: "SAMEORIGIN" },
           { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
-          { key: "Content-Security-Policy", value: "frame-ancestors 'self'; object-src 'none'" },
+          { key: "Content-Security-Policy", value: "frame-ancestors *; object-src 'none'" },
         ],
       },
-      { source: "/((?!media/|api/forecasting).*)", headers: HEADER_KEAMANAN },
+      // Peta sematan (app/[locale]/embed) — satu-satunya halaman yang boleh
+      // dibingkai situs lain. Isinya hanya peta tanpa aksi bersesi, jadi
+      // clickjacking tak punya sasaran.
+      {
+        source: "/:locale(id|en)/embed",
+        headers: [
+          ...HEADER_KEAMANAN.filter((h) => h.key !== "X-Frame-Options" && h.key !== "Content-Security-Policy"),
+          {
+            key: "Content-Security-Policy",
+            value: "frame-ancestors *; frame-src 'self' https://*.windy.com https://windy.com; base-uri 'self'; object-src 'none'",
+          },
+        ],
+      },
+      { source: "/((?!media/|api/forecasting|(?:id|en)/embed).*)", headers: HEADER_KEAMANAN },
       {
         source: "/assets/:path*",
         headers: [
