@@ -142,4 +142,4 @@ jobs:
             -o ServerAliveInterval=15 \
             -o ServerAliveCountMax=4 \
             "$USER@$HOST" \
-            "docker login ghcr.io -u '$GHCR_USER' --password-stdin && export GIT_TERMINAL_PROMPT=0; cd /srv/fire && git fetch origin main && git reset --hard origin/main && ./deploy/remote-deploy.sh '$ROLE' '$TAGS'"
+            "docker login ghcr.io -u '$GHCR_USER' --password-stdin && export GIT_TERMINAL_PROMPT=0; cd /srv/fire && git fetch origin main && git reset --hard origin/main && ./deploy/remote-deploy.sh '$ROLE' $TAGS"
