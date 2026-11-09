@@ -25,6 +25,10 @@ export type OpsiWilayah = { kunci: string; label: string; jumlah?: number };
  * - Layar lebar: satu baris — saringan (tanggal + wilayah) berkelompok di
  *   kiri, saklar di kanan. Dulu wilayah ikut ke kanan dan menyisakan rongga
  *   lebar di antara dua saringan yang sejenis.
+ *
+ * `tanpaSaringanPonsel`: di ponsel tanggal dan wilayah disembunyikan, tinggal
+ * saklarnya — dipakai umpan beranda. Pop-up wilayah peta tetap memakai
+ * keduanya.
  */
 export function BilahSaringan({
   dari,
@@ -39,6 +43,7 @@ export function BilahSaringan({
   placeholderTanggal = "Pilih rentang tanggal",
   placeholderTanggalPendek = "Tanggal",
   saklar,
+  tanpaSaringanPonsel = false,
 }: {
   dari: string;
   sampai: string;
@@ -52,19 +57,21 @@ export function BilahSaringan({
   placeholderTanggal?: string;
   placeholderTanggalPendek?: string;
   saklar: ReactNode;
+  tanpaSaringanPonsel?: boolean;
 }) {
   // Ambang yang sama dengan `sm:` Tailwind di bawah (640px).
   const sempit = useMediaQuery("(max-width: 639px)");
+  const saringan = tanpaSaringanPonsel ? "hidden sm:block" : "";
   return (
     <div className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-2 sm:flex sm:gap-2.5">
       {/* Kolom tanggal selebar isinya (maks. 9rem — rentang terpilih yang
           panjang terpotong elipsis), sisanya untuk wilayah. */}
-      <div className="min-w-0 max-w-[9rem] sm:max-w-none">
+      <div className={`min-w-0 max-w-[9rem] sm:max-w-none ${saringan}`}>
         <DateRangePicker dari={dari} sampai={sampai} gelap={gelap} onChange={onTanggal} penuh
                          placeholder={sempit ? placeholderTanggalPendek : placeholderTanggal} />
       </div>
 
-      <div className="relative min-w-0 sm:w-[240px]">
+      <div className={`relative min-w-0 sm:w-[240px] ${saringan}`}>
         <select
           value={wilayah}
           onChange={(e) => onWilayah(e.target.value)}

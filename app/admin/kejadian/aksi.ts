@@ -5,6 +5,7 @@ import { wajibSesi } from "@/lib/sesi";
 import { prisma } from "@/lib/prisma";
 import { hapusKejadian } from "@/lib/simpan-kejadian";
 import { catatGalat } from "@/lib/catat-galat";
+import { umumkanKejadianTayang } from "@/lib/notifikasi-push";
 import type { HasilAksi } from "../use-aksi";
 
 /** Alih keadaan tayang satu kejadian, langsung dari daftar (tanpa buka form).
@@ -15,13 +16,17 @@ export async function aksiTayang(id: number, status: "draft" | "published") {
     return { ok: false as const, galat: "Permintaan tidak sah." };
   }
 
+  let sebelum: string | undefined;
   try {
+    sebelum = (await prisma.events.findUnique({ where: { id }, select: { status: true } }))?.status;
     await prisma.events.update({ where: { id }, data: { status, updated_at: new Date() } });
   } catch (e) {
     // P2025 = baris sudah dihapus peninjau lain; selebihnya galat DB.
     await catatGalat("aksiTayang", e, `id=${id}`);
     return { ok: false as const, galat: "Keadaan tayang gagal diubah. Muat ulang halaman lalu coba lagi." };
   }
+  // Baru tayang (bukan sudah tayang sejak tadi): kabari pemasang aplikasi.
+  if (status === "published" && sebelum !== "published") void umumkanKejadianTayang(id);
   // Pratinjau bagikan + daftar publik di-cache: tanpa ini kejadian yang
   // diturunkan masih tampil sampai cache kedaluwarsa sendiri.
   try {

@@ -57,10 +57,44 @@ jobs:
             NEXT_SERVER_ACTIONS_ENCRYPTION_KEY=${{ secrets.NEXT_SERVER_ACTIONS_ENCRYPTION_KEY }}
             NEXT_DEPLOYMENT_ID=${{ github.sha }}
 
+  # Layanan OCR KTP (layanan/ocr-ktp). Image besar (Paddle + model), jadi
+  # cache-nya di registry, bukan GHA (kuota 10 GB dipakai build-web): selama
+  # Dockerfile & isinya tidak berubah, semua lapis kena cache dan job ini
+  # hanya menandai ulang image yang sama.
+  build-ocr:
+    needs: ci
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Tag image (latest + sha panjang + sha pendek)
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        id: meta
+        with:
+          images: ghcr.io/ultramenid/fire-buminusantara-ocr-ktp
+          tags: |
+            type=raw,value=latest
+            type=sha,format=long
+            type=sha
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        env:
+          DOCKER_BUILD_RECORD_UPLOAD: false
+        with:
+          context: layanan/ocr-ktp
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          cache-from: type=registry,ref=ghcr.io/ultramenid/fire-buminusantara-ocr-ktp:buildcache
+          cache-to: type=registry,ref=ghcr.io/ultramenid/fire-buminusantara-ocr-ktp:buildcache,mode=max
+
   deploy-prod:
-    needs: build-web
+    needs: [build-web, build-ocr]
     uses: ./.github/workflows/deploy.yml
     secrets: inherit
     with:
       role: prod
-      tags: WEB_TAG=sha-${{ github.sha }}
+      tags: WEB_TAG=sha-${{ github.sha }} OCR_TAG=sha-${{ github.sha }}

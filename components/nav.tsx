@@ -262,19 +262,21 @@ export function Nav({ bahasa, gelap = false, cari }: Props) {
              keBagian(e, BAGIAN[0]);
            }}
            className="flex shrink-0 cursor-pointer items-center gap-2">
-          {/* Dua varian yang sama persis kecuali warna huruf L-A-P-R: tinta di
-              tema terang, putih di tema gelap; gelembung merahnya tetap. Dipilih
-              lewat kelas .dark (dipasang next-themes sebelum cat pertama), bukan
-              temaGelap, supaya tak berkedip ke varian salah sebelum mount.
+          {/* Dua varian yang sama persis kecuali warna huruf "Lapor": tinta di
+              tema terang, putih di tema gelap; "in" dan sinyal oranyenya tetap.
+              Dipilih lewat kelas .dark (dipasang next-themes sebelum cat
+              pertama), bukan temaGelap, supaya tak berkedip ke varian salah
+              sebelum mount.
               loading="eager": logo ada di bilah lengket yang selalu terlihat.
-              Ekor gelembung menjulur di bawah garis dasar huruf, jadi gambar
-              diturunkan sedikit supaya hurufnya yang tampak di tengah bilah. */}
-          <Image src="/assets/img/logo-lapor.png" alt={teks.merek}
-                 width={1000} height={276} loading="eager"
-                 className="h-8 w-auto translate-y-[12%] sm:h-10 dark:hidden" />
-          <Image src="/assets/img/logo-lapor-gelap.png" alt={teks.merek}
-                 width={1000} height={276} loading="eager"
-                 className="hidden h-8 w-auto translate-y-[12%] sm:h-10 dark:block" />
+              Sinyal di atas "i" dan ekor "p" di bawah garis dasar kira-kira
+              sama tinggi, jadi huruf kapitalnya sudah di tengah gambar — tak
+              perlu digeser seperti logo bergelembung yang lama. */}
+          <Image src="/assets/img/logo-laporin.png" alt={teks.merek}
+                 width={1000} height={273} loading="eager"
+                 className="h-8 w-auto sm:h-10 dark:hidden" />
+          <Image src="/assets/img/logo-laporin-gelap.png" alt={teks.merek}
+                 width={1000} height={273} loading="eager"
+                 className="hidden h-8 w-auto sm:h-10 dark:block" />
         </Link>
 
         {/* Kolom pencarian — SATU markup, dua rupa, dan SELALU terpasang.

@@ -32,6 +32,7 @@ const KELOMPOK: { judul?: string; tautan: Tautan[] }[] = [
       { href: "/admin/suka", label: "Suka", ikon: "jempol" },
       { href: "/admin/laporan-konten", label: "Laporan konten", ikon: "bendera" },
       { href: "/admin/siaran", label: "Siaran langsung", ikon: "siaran" },
+      { href: "/admin/verifikasi", label: "Verifikasi KTP", ikon: "ktp" },
     ],
   },
   {
@@ -75,6 +76,7 @@ const IKON = {
   kunci: "M13.5 6.5a4 4 0 1 0-5.5 3.7V11h2v2h2v-2.3a4 4 0 0 0 1.5-4.2zM8 7a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3z",
   bendera: "M3.5 14V2.5M3.5 3h8.5l-2 3 2 3H3.5",
   siaran: "M8 9.3a1.3 1.3 0 1 0 0-2.6 1.3 1.3 0 0 0 0 2.6zM5.2 10.8a4 4 0 0 1 0-5.6M10.8 5.2a4 4 0 0 1 0 5.6M3.1 12.9a7 7 0 0 1 0-9.8M12.9 3.1a7 7 0 0 1 0 9.8",
+  ktp: "M1.5 3.5h13v9h-13zM6 8a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3zM3.5 10.5c.3-1.1 1.2-1.7 2.5-1.7s2.2.6 2.5 1.7M10 6h2.5M10 8.5h2.5",
 };
 
 export function Ikon({ nama, className = "size-4" }: { nama: Ikon; className?: string }) {

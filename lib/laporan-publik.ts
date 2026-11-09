@@ -1,3 +1,4 @@
+import { umumkanKejadianTayang } from "./notifikasi-push.ts";
 import { prisma } from "./prisma.ts";
 import { umumkanTunggakan } from "./loket-tunggakan.ts";
 import { bacaBerkasMedia, urlMedia, type BerkasMedia, type Orientasi } from "./media.ts";
@@ -568,6 +569,9 @@ export async function aturStatusLaporan(
     // luar transaksi bila peninjau mulai sering bertabrakan.
     { timeout: 30_000 });
 
+    // Setelah transaksi selesai, bukan di dalamnya: rollback tidak boleh menyisakan notifikasi.
+    // Kejadian draft (pilihan kurator) dilewati umumkanKejadianTayang.
+    if (hasil.ok && hasil.idKejadian) void umumkanKejadianTayang(hasil.idKejadian);
     return hasil;
   } catch (e) {
     // GagalPromosi sudah dilaporkan promosiKeKejadian — jangan alarm dua kali.

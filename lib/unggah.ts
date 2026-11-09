@@ -36,7 +36,7 @@ type MimeMedia = keyof typeof JENIS_MEDIA;
  * dikembalikan itulah yang dipakai sebagai ContentType, sehingga label palsu
  * tidak pernah ikut tersimpan.
  */
-function deteksiMime(buf: Buffer): MimeMedia | null {
+export function deteksiMime(buf: Buffer): MimeMedia | null {
   const cocok = (offset: number, ...byte: number[]) =>
     byte.every((b, i) => buf[offset + i] === b);
 
@@ -124,7 +124,7 @@ export const getConfig = () => {
 
 /** Batas resolusi gambar. Dekoder (peramban, optimizer next/image) menyiapkan
  *  lebar×tinggi×4 byte: PNG 1 KB yang mengaku 60000×60000 = bom 14 GB. */
-const BATAS_PIKSEL = 50_000_000;
+export const BATAS_PIKSEL = 50_000_000;
 
 type HasilBersih = { isi: Buffer; piksel: number };
 

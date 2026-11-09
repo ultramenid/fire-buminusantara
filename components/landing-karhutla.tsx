@@ -1309,6 +1309,7 @@ export function LandingKarhutla(
               satuan={t.saringanSatuan}
               placeholderTanggal={t.tanggalPanjang}
               placeholderTanggalPendek={t.tanggalPendek}
+              tanpaSaringanPonsel
               saklar={
                 <SaklarSegmen
                   nilai={urutanUmpan}

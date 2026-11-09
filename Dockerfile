@@ -64,6 +64,11 @@ RUN apk add --no-cache ffmpeg
 # berkas app (server.js) tidak boleh bisa ditimpa dari dalam proses. Hanya
 # .next (cache ISR/gambar) dan /app (fallback media lokal) yang perlu ditulisi.
 RUN chown node:node /app
+# Foto KTP pengajuan verifikasi (lib/verifikasi-ktp.ts, KTP_DIR bawaan) — hanya
+# user node yang bisa membacanya. docker-compose.prod.yml memasang volume di
+# sini supaya foto yang menunggu keputusan tidak hilang saat container diganti;
+# volume baru mewarisi pemilik & mode folder ini dari image.
+RUN mkdir -p /app/privat/ktp && chown -R node:node /app/privat && chmod 700 /app/privat /app/privat/ktp
 COPY --from=builder --chown=node:node /app/.next/standalone ./
 COPY --from=builder --chown=node:node /app/.next/static ./.next/static
 COPY --from=builder /app/public ./public

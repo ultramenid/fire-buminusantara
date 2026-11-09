@@ -883,6 +883,91 @@
         "security": []
       }
     },
+    "/api/mobile/daftar": {
+      "post": {
+        "tags": [
+          "Mobile"
+        ],
+        "summary": "Daftar akun warga dengan email & kata sandi",
+        "description": "Membuat akun warga (commenter) lalu langsung masuk. Tanpa verifikasi email: email_verified_at kosong, dan bila pemilik email itu kelak masuk dengan Google/Apple, kata sandi & sesi akun tersebut dicabut sebelum ditautkan. Email yang sudah terdaftar (akun apa pun) ditolak 409. Batas laju: 5 per jam per IP.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "nama": {
+                    "type": "string",
+                    "maxLength": 100,
+                    "description": "Tampil publik di komentar & siaran; disensor seperti komentar."
+                  },
+                  "email": {
+                    "type": "string",
+                    "format": "email",
+                    "maxLength": 254,
+                    "description": "Tidak peka huruf besar; spasi di tepi dibuang."
+                  },
+                  "sandi": {
+                    "type": "string",
+                    "minLength": 8,
+                    "description": "Maksimal 72 byte UTF-8 (batas bcrypt)."
+                  }
+                },
+                "required": [
+                  "nama",
+                  "email",
+                  "sandi"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Akun dibuat dan masuk",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HasilMasuk"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Email sudah terdaftar",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Galat"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Nama kosong, email tidak valid, atau kata sandi tidak memenuhi syarat",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Galat"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Terlalu banyak pendaftaran dari jaringan ini",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Galat"
+                }
+              }
+            }
+          }
+        },
+        "security": []
+      }
+    },
     "/api/mobile/keluar": {
       "post": {
         "tags": [
@@ -1528,7 +1613,7 @@
           "Mobile"
         ],
         "summary": "Buat ruang siaran baru dan token pelapor",
-        "description": "Siaran publik (tampil di beranda warga) wajib akun dan tidak boleh anonim, serta selalu memakai nama akun. Siaran khusus petugas boleh dari tamu atau anonim. Ruang publik hanya menyimpan koordinat kasar. Token LiveKit berlaku 2 jam. Batas laju: 3 siaran per 10 menit per IP, ditambah 3 per 10 menit per akun.",
+        "description": "Siaran publik (tampil di beranda warga) wajib akun, tidak boleh anonim, akunnya wajib lolos verifikasi KTP (GET/POST /api/mobile/saya/verifikasi), dan selalu memakai nama akun. Permintaan tanpa publik (siaran khusus petugas, aplikasi versi lama) boleh dari tamu atau anonim tanpa verifikasi. Ruang publik hanya menyimpan koordinat kasar. Token LiveKit berlaku 2 jam. Batas laju: 3 siaran per 10 menit per IP, ditambah 3 per 10 menit per akun.",
         "security": [
           {},
           {
@@ -1622,6 +1707,34 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Galat"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Siaran publik tetapi akun belum lolos verifikasi KTP",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "galat": {
+                      "type": "string"
+                    },
+                    "verifikasi": {
+                      "type": "string",
+                      "enum": [
+                        "belum",
+                        "menunggu",
+                        "ditolak",
+                        "disetujui"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "galat",
+                    "verifikasi"
+                  ]
                 }
               }
             }
@@ -1888,6 +2001,93 @@
         "security": []
       }
     },
+    "/api/mobile/masuk/email": {
+      "post": {
+        "tags": [
+          "Mobile"
+        ],
+        "summary": "Masuk dengan email & kata sandi",
+        "description": "Akun yang didaftarkan lewat /api/mobile/daftar atau akun situs lama (bcrypt Laravel). Akun staf (bukan commenter) ditolak 403 setelah kata sandinya benar. Token sesi kedaluwarsa setelah 90 hari tidak dipakai. Batas laju: 20 per 10 menit per IP (dihitung bersama masuk Google/Apple) dan 10 per 15 menit per email.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "email": {
+                    "type": "string",
+                    "format": "email",
+                    "maxLength": 254,
+                    "description": "Tidak peka huruf besar; spasi di tepi dibuang."
+                  },
+                  "sandi": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "email",
+                  "sandi"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Berhasil masuk",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HasilMasuk"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Email atau kata sandi salah (juga untuk akun tanpa kata sandi, mis. Google murni)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Galat"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Akun staf tidak bisa masuk ke aplikasi dengan kata sandi",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Galat"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Email atau kata sandi kosong",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Galat"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Terlalu banyak percobaan masuk (per IP atau per email)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Galat"
+                }
+              }
+            }
+          }
+        },
+        "security": []
+      }
+    },
     "/api/mobile/masuk/google": {
       "post": {
         "tags": [
@@ -2016,6 +2216,157 @@
           },
           "404": {
             "description": "Masuk uji tidak aktif (tanpa isi)"
+          }
+        },
+        "security": []
+      }
+    },
+    "/api/mobile/notifikasi": {
+      "put": {
+        "tags": [
+          "Mobile"
+        ],
+        "summary": "Daftarkan perangkat untuk notifikasi push",
+        "description": "Tanpa akun: setiap pemasang aplikasi boleh menerima notifikasi siaran langsung publik yang baru mulai (`live`) dan kejadian yang baru ditayangkan petugas (`laporan`). Dipanggil saat izin diberikan, token berganti, atau pilihan diubah. Pilihan yang tidak dikirim dianggap true. Batas laju: 30 per 10 menit per IP.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "token": {
+                    "type": "string",
+                    "maxLength": 255,
+                    "description": "Token Expo: ExponentPushToken[…]"
+                  },
+                  "platform": {
+                    "type": "string",
+                    "enum": [
+                      "ios",
+                      "android"
+                    ]
+                  },
+                  "live": {
+                    "type": "boolean"
+                  },
+                  "laporan": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "token",
+                  "platform"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tersimpan",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    },
+                    "live": {
+                      "type": "boolean"
+                    },
+                    "laporan": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Token atau platform tidak sah",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Galat"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Terlalu sering",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Galat"
+                }
+              }
+            }
+          }
+        },
+        "security": []
+      },
+      "delete": {
+        "tags": [
+          "Mobile"
+        ],
+        "summary": "Berhenti menerima notifikasi push",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "token": {
+                    "type": "string",
+                    "maxLength": 255,
+                    "description": "Token Expo: ExponentPushToken[…]"
+                  }
+                },
+                "required": [
+                  "token"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Dihapus",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Token tidak sah",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Galat"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Terlalu sering",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Galat"
+                }
+              }
+            }
           }
         },
         "security": []
@@ -2341,6 +2692,242 @@
           },
           "401": {
             "description": "Belum masuk",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Galat"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/mobile/saya/verifikasi": {
+      "get": {
+        "tags": [
+          "Mobile"
+        ],
+        "summary": "Status verifikasi KTP akun (syarat siaran langsung publik)",
+        "description": "Pengajuan yang 30 hari tidak diputuskan dihapus (beserta fotonya) dan statusnya kembali \"belum\". `alasan` hanya terisi bila ditolak.",
+        "security": [
+          {
+            "bearerMobile": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Status verifikasi",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "belum",
+                        "menunggu",
+                        "disetujui",
+                        "ditolak"
+                      ]
+                    },
+                    "alasan": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "description": "Alasan penolakan dari petugas"
+                    },
+                    "diajukan": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "date-time"
+                    },
+                    "diputuskan": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "date-time"
+                    }
+                  },
+                  "required": [
+                    "status",
+                    "alasan",
+                    "diajukan",
+                    "diputuskan"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Belum masuk",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Galat"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Mobile"
+        ],
+        "summary": "Ajukan verifikasi KTP: NIK + foto KTP",
+        "description": "Cukup foto KTP; bidang `selfie` dari aplikasi versi lama diabaikan (tidak dibaca, tidak disimpan, bukan galat). Foto disimpan privat (KTP_DIR, EXIF dibuang) hanya selama menunggu; foto dan NIK polos dihapus begitu diputuskan petugas di /admin/verifikasi atau penyedia eKYC. Pengajuan baru menggantikan yang menunggu/ditolak. Satu NIK hanya untuk satu akun terverifikasi (HMAC-SHA256 berkunci KTP_NIK_SECRET). Batas laju: 5 pengajuan per hari per akun dan 20 per IP (dihitung untuk pengajuan tersimpan dan jawaban NIK dipakai), plus 15 percobaan per hari per akun dan 60 per IP. Dengan EKYC_PROVIDER=paddleocr, NIK di foto KTP dibaca OCR internal dan dibandingkan dengan NIK ketikan: mode bantu (bawaan) hanya memberi lencana untuk petugas; mode otomatis (KTP_OCR_MODE) langsung menyetujui bila cocok dengan skor ≥ 0,9 (jawaban 200). OCR tidak pernah menolak, dan layanan OCR yang mati tidak menggagalkan pengajuan.",
+        "security": [
+          {
+            "bearerMobile": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "nik": {
+                    "type": "string",
+                    "pattern": "^[0-9]{16}$",
+                    "description": "16 angka; kode provinsi 11–96, tanggal lahir DDMMYY (perempuan +40) yang sah"
+                  },
+                  "ktp": {
+                    "type": "string",
+                    "format": "binary",
+                    "description": "Foto KTP, JPEG/PNG/WebP (dideteksi dari isi), ≤ 8 MB"
+                  }
+                },
+                "required": [
+                  "nik",
+                  "ktp"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Langsung disetujui eKYC (OCR KTP, mode otomatis)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "disetujui"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "status"
+                  ]
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "Masuk antrean petugas",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "menunggu"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "status"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Kiriman tidak terbaca, foto KTP tidak ada, bukan JPEG/PNG/WebP, rusak, atau resolusinya terlalu besar",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Galat"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Belum masuk",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Galat"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Akun sudah terverifikasi, atau NIK sudah dipakai akun lain",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Galat"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Foto KTP melebihi 8 MB atau kiriman terlalu besar",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Galat"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "NIK bukan 16 angka atau tidak valid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Galat"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Batas pengajuan harian terlewati",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Galat"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Gagal menyimpan pengajuan",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Galat"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Server belum disiapkan (KTP_NIK_SECRET) atau sedang sibuk",
             "content": {
               "application/json": {
                 "schema": {

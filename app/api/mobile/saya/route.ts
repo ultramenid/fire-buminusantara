@@ -6,6 +6,7 @@ import { emailAkunDihapus, saring } from "@/lib/komentar";
 import { bacaBerkasMedia } from "@/lib/media";
 import { prisma } from "@/lib/prisma";
 import { penandaAkun } from "@/lib/suka";
+import { hapusFotoSemua, hapusVerifikasiAkun } from "@/lib/verifikasi-ktp";
 
 /** GET /api/mobile/saya → { pengguna, statistik: { laporan, tayang, disukai } } */
 export async function GET(req: Request) {
@@ -44,8 +45,9 @@ export async function PATCH(req: Request) {
  * & emailnya dihapus, begitu pula @sebutan nama itu di balasan orang lain;
  * laporan yang sudah dikirim tetap jadi bukti kejadian, tanpa nama pelapor —
  * juga di keterangan lampirannya, termasuk di kejadian hasil promosinya — dan
- * tanpa pemilik. Sesi, suka, dan akunnya dihapus; token Sign in with Apple
- * dicabut. Akun pengelola CMS tidak bisa dihapus dari sini.
+ * tanpa pemilik. Sesi, suka, pengajuan verifikasi KTP (berikut fotonya), dan
+ * akunnya dihapus; token Sign in with Apple dicabut. Akun pengelola CMS tidak
+ * bisa dihapus dari sini.
  */
 export async function DELETE(req: Request) {
   const p = await penggunaDari(req);
@@ -56,7 +58,7 @@ export async function DELETE(req: Request) {
   }
   if (akun.apple_id) await cabutTokenApple(p.id);
 
-  const kejadianBerubah = await prisma.$transaction(async (tx) => {
+  const [kejadianBerubah, fotoKtp] = await prisma.$transaction(async (tx) => {
     // mention_name adalah salinan nama induk saat membalas, jadi setiap balasan
     // ke komentar akun ini menyebut akun ini — termasuk nama lama sebelum diganti.
     const komentar = await tx.comments.findMany({ where: { user_id: p.id }, select: { id: true } });
@@ -99,9 +101,12 @@ export async function DELETE(req: Request) {
     }
 
     await tx.event_likes.deleteMany({ where: { visitor_hash: penandaAkun(p.id) } });
+    // Barisnya di sini; fotonya baru dihapus setelah transaksi berhasil.
+    const foto = await hapusVerifikasiAkun(tx, p.id);
     await tx.users.delete({ where: { id: p.id } });
-    return berubah;
+    return [berubah, foto] as const;
   });
+  await hapusFotoSemua(fotoKtp);
 
   // Data pribadi harus hilang sekarang, bukan setelah satu sajian basi lagi.
   revalidateTag("komentar", { expire: 0 });

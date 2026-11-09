@@ -1,0 +1,7 @@
+# paddlepaddle (CPU) TIDAK di sini: dipasang lebih dulu di Dockerfile dari
+# indeks resmi PaddlePaddle — paddlepaddle==3.2.0
+#   -i https://www.paddlepaddle.org.cn/packages/stable/cpu/
+paddleocr==3.2.0
+fastapi==0.115.12
+uvicorn==0.34.2
+python-multipart==0.0.20

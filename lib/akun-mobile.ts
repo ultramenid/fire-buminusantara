@@ -1,5 +1,7 @@
-import { createCipheriv, createDecipheriv, createHash, hkdfSync, randomBytes } from "node:crypto";
+import { createCipheriv, createDecipheriv, createHash, hkdfSync, randomBytes, timingSafeEqual } from "node:crypto";
+import bcrypt from "bcryptjs";
 import { createRemoteJWKSet, importPKCS8, jwtVerify, SignJWT } from "jose";
+import { BIAYA_BCRYPT, DUMMY_HASH, emailSah } from "./auth.ts";
 import { catatGalat } from "./catat-galat.ts";
 import { saring } from "./komentar.ts";
 import { prisma } from "./prisma.ts";
@@ -15,8 +17,9 @@ import { prisma } from "./prisma.ts";
  * keluar = baris dihapus, tidak menunggu kedaluwarsa.
  *
  * Akun warga duduk di tabel `users` yang sama dengan akun CMS, berperan
- * `commenter`. Peran itu tidak pernah lolos bolehKelola() di lib/sesi.ts, dan
- * akun Google murni tidak punya kata sandi, jadi tidak bisa masuk CMS.
+ * `commenter`. Peran itu tidak pernah lolos bolehKelola() di lib/sesi.ts, jadi
+ * akun warga — Google murni tanpa kata sandi, maupun yang didaftarkan dengan
+ * email & kata sandi (daftarEmail) — tidak bisa masuk CMS.
  */
 
 export const BATAS_NAMA = 100;
@@ -161,6 +164,110 @@ const GALAT_STAF = {
 };
 
 /**
+ * Menautkan Google/Apple ke akun yang ditemukan lewat email. Penyedia itu membuktikan pemilik
+ * emailnya, sedangkan daftar dengan email (daftarEmail) tidak: siapa pun bisa mendaftarkan email
+ * orang lain beserta kata sandinya lebih dulu. Karena itu akun yang emailnya belum terverifikasi
+ * kehilangan kata sandi & sesinya saat ditautkan, lalu emailnya dianggap terverifikasi. Akun
+ * yang sudah terverifikasi (Google, Laravel) tetap seperti semula.
+ */
+async function tautkanTerbukti(
+  akun: { id: bigint; email_verified_at?: Date | null },
+  tautan: { google_id: string } | { apple_id: string },
+  sekarang: Date,
+): Promise<void> {
+  const belumTerbukti = !akun.email_verified_at;
+  if (belumTerbukti) await prisma.mobile_sessions.deleteMany({ where: { user_id: akun.id } });
+  await prisma.users.update({
+    where: { id: akun.id },
+    data: { ...tautan, updated_at: sekarang, ...(belumTerbukti && { password: null, email_verified_at: sekarang }) },
+  });
+}
+
+/** Kata sandi akun email: minimal 8 karakter, maksimal 72 byte (bcrypt memotong sisanya diam-diam). */
+export const SANDI_MIN = 8;
+export const SANDI_MAKS_BYTE = 72;
+
+/** Galat isian kata sandi baru, atau null bila sah. */
+export function galatSandi(sandi: string): string | null {
+  if (sandi.length < SANDI_MIN) return `Kata sandi minimal ${SANDI_MIN} karakter.`;
+  if (Buffer.byteLength(sandi, "utf8") > SANDI_MAKS_BYTE) return "Kata sandi terlalu panjang (maksimal 72 karakter).";
+  return null;
+}
+
+/** Email dibandingkan tanpa huruf besar & spasi (kolasi kolom email juga tidak peka huruf besar). */
+export function rapikanEmail(email: unknown): string {
+  return String(email ?? "").trim().toLowerCase();
+}
+
+const GALAT_SANDI_SALAH = { galat: "Email atau kata sandi salah.", status: 401 };
+
+/**
+ * Masuk dengan email & kata sandi: akun yang didaftarkan dari aplikasi (daftarEmail) dan akun
+ * situs lama (bcrypt Laravel `$2y$`, dibaca bcryptjs apa adanya — lib/auth.ts). Waktu jawab sama
+ * apakah akunnya ada atau tidak (DUMMY_HASH). Akun staf ditolak SETELAH kata sandinya benar,
+ * supaya kata sandi CMS tidak menjadi pintu masuk baru dan peran tidak bisa ditebak tanpa sandi.
+ */
+export async function penggunaEmail(email: string, sandi: string): Promise<BarisPengguna | { galat: string; status: number }> {
+  const akun = emailSah(email)
+    ? await prisma.users.findUnique({ where: { email }, select: { ...PILIH, password: true, role: true } })
+    : null;
+  if (!akun?.password) {
+    await bcrypt.compare(sandi, DUMMY_HASH);
+    return GALAT_SANDI_SALAH;
+  }
+  if (!(await bcrypt.compare(sandi, akun.password))) return GALAT_SANDI_SALAH;
+  if (akun.role !== "commenter") {
+    return { galat: "Akun staf tidak bisa masuk ke aplikasi dengan kata sandi. Gunakan akun warga.", status: 403 };
+  }
+  return { id: akun.id, name: akun.name, email: akun.email, image: akun.image };
+}
+
+/**
+ * Daftar akun warga dengan email & kata sandi, tanpa verifikasi email (belum ada pengirim email):
+ * email_verified_at null. Email yang sudah terdaftar ditolak — kata sandi tidak pernah ditempelkan
+ * ke akun yang sudah ada (Google, Apple, Laravel, staf). Pemilik asli email tetap aman lewat
+ * tautkanTerbukti saat ia masuk dengan Google/Apple.
+ */
+export async function daftarEmail(
+  namaMentah: string,
+  email: string,
+  sandi: string,
+): Promise<BarisPengguna | { galat: string; status: number }> {
+  const nama = namaMentah.trim().slice(0, BATAS_NAMA);
+  if (!nama) return { galat: "Nama wajib diisi.", status: 422 };
+  if (!emailSah(email)) return { galat: "Alamat email tidak valid.", status: 422 };
+  const salahSandi = galatSandi(sandi);
+  if (salahSandi) return { galat: salahSandi, status: 422 };
+
+  const GALAT_TERDAFTAR = {
+    galat: "Email ini sudah terdaftar. Masuk dengan kata sandinya, atau dengan Google/Apple bila akunnya dibuat dengan cara itu.",
+    status: 409,
+  };
+  if (await prisma.users.findUnique({ where: { email }, select: { id: true } })) return GALAT_TERDAFTAR;
+  const sekarang = new Date();
+  try {
+    return await prisma.users.create({
+      data: {
+        // Nama tampil publik di komentar & siaran, jadi disensor seperti isinya.
+        name: saring(nama) || "Warga",
+        email,
+        // Hash bcryptjs juga terbaca pengecek bcrypt Laravel (sama dengan CMS).
+        password: await bcrypt.hash(sandi, BIAYA_BCRYPT),
+        role: "commenter",
+        email_verified_at: null,
+        created_at: sekarang,
+        updated_at: sekarang,
+      },
+      select: PILIH,
+    });
+  } catch (e) {
+    // Dua pendaftaran serentak dengan email yang sama: indeks unik menolak yang kedua.
+    if ((e as { code?: string })?.code === "P2002") return GALAT_TERDAFTAR;
+    throw e;
+  }
+}
+
+/**
  * Akun untuk klaim Google: dicari lewat google_id, lalu email. Email warga
  * yang sudah terdaftar ditautkan karena Google menjamin pemiliknya — kecuali
  * akun staf (GALAT_STAF). Nama yang sudah diubah warga tidak ditimpa nama Google.
@@ -172,7 +279,7 @@ export async function penggunaGoogle(g: KlaimGoogle): Promise<BarisPengguna | { 
   const sekarang = new Date();
   const lewatEmail = await prisma.users.findUnique({
     where: { email: g.email },
-    select: { ...PILIH, google_id: true, role: true },
+    select: { ...PILIH, google_id: true, role: true, email_verified_at: true },
   });
   if (lewatEmail) {
     if (lewatEmail.google_id && lewatEmail.google_id !== g.sub) {
@@ -180,7 +287,7 @@ export async function penggunaGoogle(g: KlaimGoogle): Promise<BarisPengguna | { 
     }
     if (!lewatEmail.google_id) {
       if (lewatEmail.role !== "commenter") return GALAT_STAF;
-      await prisma.users.update({ where: { id: lewatEmail.id }, data: { google_id: g.sub, updated_at: sekarang } });
+      await tautkanTerbukti(lewatEmail, { google_id: g.sub }, sekarang);
     }
     return { id: lewatEmail.id, name: lewatEmail.name, email: lewatEmail.email, image: lewatEmail.image };
   }
@@ -253,14 +360,14 @@ export async function penggunaApple(a: KlaimApple, nama: string): Promise<BarisP
   if (a.email) {
     const lewatEmail = await prisma.users.findUnique({
       where: { email: a.email },
-      select: { ...PILIH, apple_id: true, role: true },
+      select: { ...PILIH, apple_id: true, role: true, email_verified_at: true },
     });
     if (lewatEmail) {
       if (lewatEmail.apple_id && lewatEmail.apple_id !== a.sub) {
         return { galat: "Email ini sudah tertaut ke akun Apple lain.", status: 409 };
       }
       if (!lewatEmail.apple_id && lewatEmail.role !== "commenter") return GALAT_STAF;
-      await prisma.users.update({ where: { id: lewatEmail.id }, data: { apple_id: a.sub, updated_at: sekarang } });
+      await tautkanTerbukti(lewatEmail, { apple_id: a.sub }, sekarang);
       return { id: lewatEmail.id, name: lewatEmail.name, email: lewatEmail.email, image: lewatEmail.image };
     }
   }
@@ -431,12 +538,24 @@ export function anonimkanMedia(media: unknown, nama: Set<string>): { media: unkn
   return { media: berubah ? baru : media, berubah };
 }
 
+/** Kode masuk uji di produksi minimal sepanjang ini: tidak bisa ditebak lewat percobaan. */
+const KODE_UJI_MIN = 16;
+
 /**
- * Masuk uji tanpa Google, untuk mengembangkan aplikasi terhadap `next dev`.
- * Terkunci ganda: tidak pernah di produksi, dan hanya bila MOBILE_MASUK_UJI=1.
+ * Masuk uji tanpa Google (nama saja). Hanya bila MOBILE_MASUK_UJI=1.
+ * - Pengembangan (`next dev`): cukup itu.
+ * - Produksi: juga wajib MOBILE_MASUK_UJI_KODE (≥ 16 karakter) dan `kode` yang sama dari aplikasi.
+ *   Kode itu hanya tertanam di build preview internal aplikasi (EXPO_PUBLIC_MASUK_UJI_KODE), jadi
+ *   orang luar yang menemukan rute ini tetap tidak bisa masuk sebagai nama apa pun.
  */
-export function masukUjiBoleh(): boolean {
-  return process.env.NODE_ENV !== "production" && process.env.MOBILE_MASUK_UJI === "1";
+export function masukUjiBoleh(kode?: unknown): boolean {
+  if (process.env.MOBILE_MASUK_UJI !== "1") return false;
+  if (process.env.NODE_ENV !== "production") return true;
+  const rahasia = process.env.MOBILE_MASUK_UJI_KODE ?? "";
+  if (rahasia.length < KODE_UJI_MIN || typeof kode !== "string") return false;
+  // Dibandingkan sebagai sidik sha256: panjang sama, waktu tetap.
+  const sidik = (t: string) => createHash("sha256").update(t).digest();
+  return timingSafeEqual(sidik(kode), sidik(rahasia));
 }
 
 export async function penggunaUji(nama: string): Promise<BarisPengguna> {

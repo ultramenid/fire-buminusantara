@@ -28,7 +28,7 @@ case "$ROLE" in
     ;;
 esac
 
-ALLOWED_KEYS="WEB_TAG"
+ALLOWED_KEYS="WEB_TAG OCR_TAG"
 
 log() { printf '[deploy] %s\n' "$*"; }
 die() { printf '[deploy] ERROR: %s\n' "$*" >&2; exit 1; }

@@ -158,7 +158,7 @@ function bangunDataLd(
       ...organisasi,
       logo: {
         "@type": "ImageObject",
-        url: new URL("/assets/img/logo-lapor.png", URL_SITUS).toString(),
+        url: new URL("/assets/img/logo-laporin.png", URL_SITUS).toString(),
       },
     },
   };

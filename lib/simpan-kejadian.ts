@@ -4,6 +4,7 @@ import { simpanBerkasGaleri, hapusBerkas } from "./unggah.ts";
 import { bacaBerkasMedia, orientasiKartu, type BerkasMedia } from "./media.ts";
 import { lokasiDariKoordinat } from "./geo.ts";
 import { catatGalat } from "./catat-galat.ts";
+import { umumkanKejadianTayang } from "./notifikasi-push.ts";
 
 /** Revalidasi cache halaman beranda dan locale saat data kejadian berubah. */
 export async function revalidasiKejadian() {
@@ -235,6 +236,9 @@ export async function simpanKejadian(data: FormData, id?: number, mediaAwal?: Be
     // `image_en` lolos ke produksi.
   } satisfies Prisma.eventsUncheckedUpdateInput;
 
+  // Status sebelum disunting: notifikasi hanya saat kejadian BARU tayang.
+  const sebelum = id ? (await prisma.events.findUnique({ where: { id }, select: { status: true } }))?.status : undefined;
+
   try {
     let idTersimpan: number;
     try {
@@ -275,6 +279,7 @@ export async function simpanKejadian(data: FormData, id?: number, mediaAwal?: Be
     }
 
     revalidasiKejadian();
+    if (status === "published" && sebelum !== "published") void umumkanKejadianTayang(idTersimpan);
 
     return { ok: true, id: idTersimpan };
   } catch (e) {

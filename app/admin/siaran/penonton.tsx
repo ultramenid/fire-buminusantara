@@ -17,6 +17,9 @@ const AWALAN_PELAPOR = "pelapor-";
 const TOPIK_KOMENTAR = "komentar";
 const TOPIK_SUKA = "suka";
 const TOPIK_HADIAH = "hadiah";
+/** Hadiah di siaran dimatikan sementara: tombolnya tidak tampil dan hadiah yang masuk
+ *  diabaikan. Samakan dengan HADIAH_AKTIF di aplikasi (src/lib/live.ts). */
+const HADIAH_AKTIF = false;
 /** Titik persis pelapor, hanya dikirim ke peserta `petugas-…`:
  *  JSON { lat, lng, akurasi, waktu }. */
 const TOPIK_LOKASI = "lokasi";
@@ -172,14 +175,16 @@ export function Penonton({ siaran, onTutup, onBerakhir }: {
         const n = Math.min(50, Math.max(1, parseInt(await reader.readAll(), 10) || 1));
         if (!batal) setSuka((s) => s + n);
       });
-      r.registerTextStreamHandler(TOPIK_HADIAH, async (reader, { identity }) => {
-        const k = bacaHadiah(await reader.readAll());
-        if (!k || batal) return;
-        setBaris(tambahkan({
-          nama: namaDari(identity), peran: peranDari(identity), kabar: true,
-          teks: `mengirim ${k.hadiah.emoji} ${k.hadiah.nama}${k.jumlah > 1 ? ` ×${k.jumlah}` : ""}`,
-        }));
-      });
+      if (HADIAH_AKTIF) {
+        r.registerTextStreamHandler(TOPIK_HADIAH, async (reader, { identity }) => {
+          const k = bacaHadiah(await reader.readAll());
+          if (!k || batal) return;
+          setBaris(tambahkan({
+            nama: namaDari(identity), peran: peranDari(identity), kabar: true,
+            teks: `mengirim ${k.hadiah.emoji} ${k.hadiah.nama}${k.jumlah > 1 ? ` ×${k.jumlah}` : ""}`,
+          }));
+        });
+      }
       r.registerTextStreamHandler(TOPIK_LOKASI, async (reader, { identity }) => {
         const teks = await reader.readAll();
         if (batal || !identity.startsWith(AWALAN_PELAPOR)) return;
@@ -395,7 +400,7 @@ export function Penonton({ siaran, onTutup, onBerakhir }: {
                     className="cms-tombol cms-tombol--garis h-auto flex-col gap-0.5 py-2 text-[12px]">
               <span aria-hidden="true" className="text-[22px] leading-none text-[#e5484d]">♥</span>Hati
             </button>
-            {DAFTAR_HADIAH.map((h) => (
+            {HADIAH_AKTIF && DAFTAR_HADIAH.map((h) => (
               <button key={h.id} type="button" onClick={() => kirimApresiasi(h.id)}
                       className="cms-tombol cms-tombol--garis h-auto flex-col gap-0.5 py-2 text-[12px]">
                 <span aria-hidden="true" className="text-[22px] leading-none">{h.emoji}</span>{h.nama}

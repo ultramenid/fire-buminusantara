@@ -1,0 +1,4 @@
+# Konteks build image OCR: hanya yang dipakai Dockerfile.
+*
+!app.py
+!requirements.txt

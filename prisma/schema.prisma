@@ -36,6 +36,12 @@ model users {
   remember_token      String?             @db.VarChar(100)
   created_at          DateTime?           @db.Timestamp(0)
   updated_at          DateTime?           @db.Timestamp(0)
+  /// Verifikasi KTP disetujui (syarat siaran langsung publik dari aplikasi).
+  /// null = belum. Lihat lib/verifikasi-ktp.ts.
+  ktp_verified_at     DateTime?           @db.Timestamp(0)
+  /// HMAC-SHA256 NIK yang disetujui (KTP_NIK_SECRET), bukan NIK-nya. Unik:
+  /// satu NIK hanya untuk satu akun terverifikasi.
+  ktp_nik_hash        String?             @unique(map: "users_ktp_nik_hash_unique") @db.Char(64)
   comment_reactions   comment_reactions[]
   comments            comments[]
   public_reports      public_reports[]    @relation("peninjau")
@@ -44,6 +50,10 @@ model users {
   passkeys            passkeys[]
   mobile_sessions     mobile_sessions[]
   content_reports     content_reports[]
+  /// Pengajuan verifikasi KTP akun ini dari aplikasi mobile.
+  verifikasi_ktp      mobile_ktp_verifications[] @relation("pemohon_ktp")
+  /// Pengajuan KTP yang diputuskan akun CMS ini.
+  tinjauan_ktp        mobile_ktp_verifications[] @relation("peninjau_ktp")
 }
 
 model events {
@@ -59,6 +69,10 @@ model events {
   title_id         String             @db.VarChar(255)
   slug             String?            @unique(map: "events_slug_unique") @db.VarChar(255)
   title_en         String             @db.VarChar(255)
+  /// Warisan basis data bersama (aplikasi Laravel) — tidak dipakai Next.js (isinya
+  /// di description_id/_en), tapi tetap dideklarasikan supaya schema = migrasi = DB.
+  desc_id          String?            @db.Text
+  desc_en          String?            @db.Text
   description_id   String?            @db.Text
   description_en   String?            @db.Text
   event_date       DateTime           @db.Date
@@ -105,6 +119,8 @@ model comments {
 
   @@index([commentable_type, commentable_id, is_approved], map: "comments_commentable_index")
   @@index([is_approved, created_at], map: "comments_is_approved_created_at_index")
+  // Warisan basis data bersama (indeks buatan aplikasi Laravel).
+  @@index([page_id, is_approved], map: "comments_page_id_is_approved_index")
   @@index([parent_id], map: "comments_parent_id_foreign")
   @@index([user_id], map: "comments_user_id_foreign")
 }
@@ -252,6 +268,22 @@ model passkeys {
   @@index([user_id], map: "passkeys_user_id_foreign")
 }
 
+/// Perangkat penerima notifikasi push aplikasi mobile (Expo Push, lib/notifikasi-push.ts): setiap
+/// pemasang aplikasi, dengan atau tanpa akun. Hanya token Expo & pilihan jenisnya yang disimpan —
+/// tidak terhubung ke akun. Token yang ditolak Expo (DeviceNotRegistered) dibuang saat mengirim.
+model mobile_push_tokens {
+  id         BigInt   @id @default(autoincrement()) @db.UnsignedBigInt
+  token      String   @unique(map: "mobile_push_tokens_token_unique") @db.VarChar(255)
+  /// "ios" | "android"
+  platform   String   @db.VarChar(16)
+  /// Mau dikabari siaran langsung publik yang baru mulai.
+  live       Boolean  @default(true)
+  /// Mau dikabari laporan yang baru ditayangkan petugas.
+  laporan    Boolean  @default(true)
+  created_at DateTime @default(now()) @db.Timestamp(0)
+  updated_at DateTime @default(now()) @db.Timestamp(0)
+}
+
 /// Sesi aplikasi mobile (akun warga). Terpisah dari cookie sesi CMS: token
 /// acak dikirim sebagai Bearer, yang disimpan hanya sha256-nya, dan barisnya
 /// dihapus saat keluar. Tabel milik CMS ini.
@@ -288,4 +320,63 @@ model content_reports {
   @@index([jenis, target_id], map: "content_reports_jenis_target_id_index")
   @@index([status, created_at], map: "content_reports_status_created_at_index")
   @@index([reporter_user_id], map: "content_reports_reporter_user_id_foreign")
+}
+
+/// Verifikasi KTP akun warga — syarat siaran langsung publik dari aplikasi
+/// mobile. Petugas CMS (/admin/verifikasi) mencocokkan foto KTP dengan NIK
+/// ketikan; penyedia eKYC (lib/ekyc.ts) boleh menyetujui lebih dulu bila
+/// dipasang. Tabel milik CMS ini.
+///
+/// Data seminimal mungkin: foto (di KTP_DIR, tak pernah dilayani publik) dan
+/// NIK polos hanya ada selama `menunggu`, lalu dibuang begitu diputuskan.
+/// Setelah itu yang tersisa status, waktu, metode, peninjau, alasan tolak, dan
+/// HMAC NIK. Pengajuan `menunggu` lebih dari 30 hari dihapus saat antrean atau
+/// status dibaca (sapuKedaluwarsa di lib/verifikasi-ktp.ts).
+model mobile_ktp_verifications {
+  id          BigInt                               @id @default(autoincrement()) @db.UnsignedBigInt
+  user_id     BigInt                               @db.UnsignedBigInt
+  status      mobile_ktp_verifications_status      @default(menunggu)
+  /// NIK ketikan warga, dicocokkan peninjau dengan foto. null setelah diputuskan.
+  nik         String?                              @db.VarChar(16)
+  /// HMAC-SHA256 NIK (KTP_NIK_SECRET) — disalin ke users.ktp_nik_hash saat disetujui.
+  nik_hash    String                               @db.Char(64)
+  /// Nama berkas foto KTP (acak) di KTP_DIR. null setelah diputuskan (berkasnya dihapus).
+  ktp_path    String?                              @db.VarChar(64)
+  /// OCR foto KTP (EKYC_PROVIDER=paddleocr, lib/ocr-ktp.ts): NIK di foto
+  /// dibandingkan NIK ketikan. null = OCR tidak dijalankan.
+  ocr_result  mobile_ktp_verifications_ocr_result?
+  /// NIK yang terbaca OCR. null setelah diputuskan, seperti `nik`.
+  ocr_nik     String?                              @db.VarChar(16)
+  /// Skor baca terendah baris NIK itu (0–1).
+  ocr_score   Float?
+  method      mobile_ktp_verifications_method?
+  /// Alasan penolakan — ditampilkan ke warga di aplikasi.
+  reason      String?                              @db.Text
+  reviewer_id BigInt?                              @db.UnsignedBigInt
+  created_at  DateTime                             @default(now()) @db.Timestamp(0)
+  decided_at  DateTime?                            @db.Timestamp(0)
+  pemohon     users                                @relation("pemohon_ktp", fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "mobile_ktp_verifications_user_id_foreign")
+  peninjau    users?                               @relation("peninjau_ktp", fields: [reviewer_id], references: [id], onDelete: SetNull, onUpdate: NoAction, map: "mobile_ktp_verifications_reviewer_id_foreign")
+
+  @@index([user_id, created_at], map: "mobile_ktp_verifications_user_id_created_at_index")
+  @@index([status, created_at], map: "mobile_ktp_verifications_status_created_at_index")
+  @@index([reviewer_id], map: "mobile_ktp_verifications_reviewer_id_foreign")
+}
+
+enum mobile_ktp_verifications_status {
+  menunggu
+  disetujui
+  ditolak
+}
+
+enum mobile_ktp_verifications_method {
+  petugas
+  ekyc
+}
+
+enum mobile_ktp_verifications_ocr_result {
+  cocok
+  beda
+  tak_terbaca
+  gagal
 }

@@ -12,6 +12,8 @@
 /public/storage/
 # cermin media lokal (gambar & video uji, ~82 MB) — sumber aslinya di MinIO
 /media/
+# foto KTP pengajuan verifikasi (KTP_DIR bawaan) — data pribadi, jangan pernah ikut
+/privat/
 
 # rahasia: kredensial database, MinIO, dan session
 .env
