@@ -126,13 +126,22 @@ const KUNCI_GOOGLE = createRemoteJWKSet(new URL("https://www.googleapis.com/oaut
 export type KlaimGoogle = { sub: string; email: string; nama: string | null; foto: string | null };
 
 /**
+ * OAuth client "Web application" yang diterima sebagai `aud`. Boleh beberapa, dipisah koma: saat
+ * pindah proyek Google Cloud, build lama (client lama) dan build baru (client baru) sama-sama bisa
+ * masuk sampai build lama habis. `sub` Google sama di semua proyek, jadi akun tetap tertaut.
+ */
+export function klienGoogle(): string[] {
+  return (process.env.GOOGLE_WEB_CLIENT_ID ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+}
+
+/**
  * Verifikasi idToken dari Google Sign-In di HP: tanda tangan Google, penerbit,
- * `aud` = OAuth client "Web application" yang juga dipakai aplikasi, dan email
- * terverifikasi.
+ * `aud` = salah satu OAuth client "Web application" yang juga dipakai aplikasi
+ * (`klienGoogle`), dan email terverifikasi.
  */
 export async function verifikasiGoogle(idToken: string): Promise<KlaimGoogle | { galat: string; status: number }> {
-  const aud = process.env.GOOGLE_WEB_CLIENT_ID;
-  if (!aud) return { galat: "Masuk dengan Google belum disiapkan di server.", status: 503 };
+  const aud = klienGoogle();
+  if (!aud.length) return { galat: "Masuk dengan Google belum disiapkan di server.", status: 503 };
   if (!idToken || idToken.length > 4096) return { galat: "Token Google kosong atau rusak.", status: 400 };
   try {
     const { payload } = await jwtVerify(idToken, KUNCI_GOOGLE, {

@@ -2094,7 +2094,7 @@
           "Mobile"
         ],
         "summary": "Masuk dengan Google",
-        "description": "Menukar idToken dari Google Sign-In native dengan token sesi situs ini. aud harus sama dengan GOOGLE_WEB_CLIENT_ID, dan email harus sudah terverifikasi. Token sesi kedaluwarsa setelah 90 hari tidak dipakai. Batas laju: 20 per 10 menit per IP (dihitung bersama masuk Apple).",
+        "description": "Menukar idToken dari Google Sign-In native dengan token sesi situs ini. aud harus salah satu client di GOOGLE_WEB_CLIENT_ID (boleh beberapa, dipisah koma), dan email harus sudah terverifikasi. Token sesi kedaluwarsa setelah 90 hari tidak dipakai. Batas laju: 20 per 10 menit per IP (dihitung bersama masuk Apple).",
         "requestBody": {
           "required": true,
           "content": {

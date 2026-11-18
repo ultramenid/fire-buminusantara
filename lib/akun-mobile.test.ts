@@ -9,6 +9,7 @@ import {
   bundleApple,
   daftarEmail,
   galatSandi,
+  klienGoogle,
   masukUjiBoleh,
   penggunaApple,
   penggunaEmail,
@@ -19,6 +20,7 @@ import {
   sesiKedaluwarsa,
   sidikToken,
   tokenDari,
+  verifikasiGoogle,
 } from "./akun-mobile.ts";
 import { penandaAkun, penandaPengunjung } from "./suka.ts";
 
@@ -102,6 +104,26 @@ test("bundleApple: APPLE_BUNDLE_ID boleh beberapa, dipisah koma", () => {
   assert.deepEqual(bundleApple(), []);
   if (lama === undefined) delete process.env.APPLE_BUNDLE_ID;
   else process.env.APPLE_BUNDLE_ID = lama;
+});
+
+test("klienGoogle: GOOGLE_WEB_CLIENT_ID boleh beberapa, dipisah koma", () => {
+  const lama = process.env.GOOGLE_WEB_CLIENT_ID;
+  process.env.GOOGLE_WEB_CLIENT_ID = "1-lama.apps.googleusercontent.com";
+  assert.deepEqual(klienGoogle(), ["1-lama.apps.googleusercontent.com"]);
+  process.env.GOOGLE_WEB_CLIENT_ID = " 1-lama.apps.googleusercontent.com , 2-baru.apps.googleusercontent.com,";
+  assert.deepEqual(klienGoogle(), ["1-lama.apps.googleusercontent.com", "2-baru.apps.googleusercontent.com"]);
+  process.env.GOOGLE_WEB_CLIENT_ID = "";
+  assert.deepEqual(klienGoogle(), []);
+  if (lama === undefined) delete process.env.GOOGLE_WEB_CLIENT_ID;
+  else process.env.GOOGLE_WEB_CLIENT_ID = lama;
+});
+
+test("verifikasiGoogle: 503 tanpa GOOGLE_WEB_CLIENT_ID", async () => {
+  const lama = process.env.GOOGLE_WEB_CLIENT_ID;
+  process.env.GOOGLE_WEB_CLIENT_ID = " , ";
+  assert.deepEqual(await verifikasiGoogle("token"), { galat: "Masuk dengan Google belum disiapkan di server.", status: 503 });
+  if (lama === undefined) delete process.env.GOOGLE_WEB_CLIENT_ID;
+  else process.env.GOOGLE_WEB_CLIENT_ID = lama;
 });
 
 test("rahasiaKlienApple: JWT ES256 untuk REST API Apple, null tanpa kunci .p8", async () => {
